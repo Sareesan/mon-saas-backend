@@ -11,6 +11,9 @@ const morgan = require('morgan');
 const bodyParser = require('body-parser');
 
 const app = express();
+app.get("/", (req, res) => {
+  res.send("Backend OK");
+});
 const PORT = process.env.PORT || 3000;
 
 // Middleware
@@ -167,3 +170,4 @@ app.post('/api/vision', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
