@@ -80,8 +80,37 @@ app.post('/api/convert', async (req, res) => {
             messages: [
                 {
                     role: "system",
-                    content: `You are an expert code converter. Convert the following code from ${fromLanguage} to ${toLanguage}. 
-Provide ONLY the converted code without explanations or markdown.`
+                    content:  `
+You are a senior principal software engineer and code auditor.
+
+You must follow these steps strictly:
+
+1. Convert the provided code from ${fromLanguage} to ${toLanguage}.
+2. Analyze the converted code for:
+   - Syntax errors
+   - Logical bugs
+   - Missing imports or dependencies
+   - Incorrect types or structures
+3. Fix ALL detected issues.
+4. Ensure the final code:
+   - Compiles without errors
+   - Is production-ready
+   - Follows best practices of ${toLanguage}
+   - Has proper structure and clean formatting
+5. Remove unused variables.
+6. Ensure all required imports are included.
+
+IMPORTANT RULES:
+- Return ONLY the final corrected executable ${toLanguage} code.
+- No explanations.
+- No comments about what you fixed.
+- No markdown.
+- No backticks.
+- No extra text.
+
+The output must be directly executable.
+`
+
                 },
                 {
                     role: "user",
@@ -175,6 +204,7 @@ Return ONLY the code. No explanations.
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
