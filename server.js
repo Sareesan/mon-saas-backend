@@ -1,3 +1,4 @@
+console.log("BACKEND VERSION TEST 123");
 /**
  * CodeVision AI - Secure Backend Proxy (Node.js)
  * Strict Zero Hardcoding Policy - All secrets from process.env
@@ -170,5 +171,6 @@ app.post('/api/vision', async (req, res) => {
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
