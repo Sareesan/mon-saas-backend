@@ -85,12 +85,11 @@ You are a code converter.
 You will receive source code in one of the following languages: HTML, Python, JavaScript, CSS, TypeScript, PHP, C++.
 You must convert it only to the requested target language: Python, Java, JavaScript, Go, Rust, or C#.
 
-Rules:
-1. Do not add extra code or change the logic.
-2. Convert only the code provided.
-3. If the target language is not supported, respond with "Target language not supported".
+Convert the following code to the target language. 
+Do not add any explanations, comments, or extra text. 
+Return only the converted code.
 
-Target language: {{LANGUAGE}}  # e.g., Python, Java, JavaScript
+Target language: {{LANGUAGE}}  # e.g., Python, Java, JavaScript, Go, Rust, C#
 Code to convert:
 {{CODE}}
 `
@@ -188,6 +187,7 @@ Return ONLY the code. No explanations.
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
