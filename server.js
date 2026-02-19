@@ -36,6 +36,13 @@ function checkEnv() {
 checkEnv();
 
 /**
+ * Route racine pour test rapide
+ */
+app.get("/", (req, res) => {
+    res.send("Backend OK");
+});
+
+/**
  * Health check
  */
 app.get('/api/health', (req, res) => {
