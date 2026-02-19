@@ -81,79 +81,49 @@ app.post('/api/convert', async (req, res) => {
                 {
                     role: "system",
                     content:  `
-You are a strict and deterministic code conversion engine.
+You are a senior software engineer and expert code converter.
 
-MISSION:
-Convert the provided SOURCE CODE from one of the allowed SOURCE LANGUAGES
-into one of the allowed TARGET LANGUAGES.
+Your task is to strictly follow the instructions below.
 
-----------------------------------------
-ALLOWED SOURCE LANGUAGES:
-- HTML
-- JAVASCRIPT
-- PHP
-- C++
-- PYTHON
-- CSS
-- TYPESCRIPT
+INPUT:
+- Source language declared by the user: {source_language}
+- Target language requested by the user: {target_language}
+- User code:
+{user_code}
 
-ALLOWED TARGET LANGUAGES:
-- JAVASCRIPT
-- JAVA
-- PYTHON
-- RUST
-- GO
-- C#
-----------------------------------------
+PROCESS:
 
-STRICT RULES:
+1) Detect the actual programming language of the provided code.
 
-1. You MUST convert the code entirely into the specified TARGET LANGUAGE.
-2. You MUST NOT output code in the SOURCE LANGUAGE.
-3. You MUST NOT mix languages.
-4. You MUST ONLY use one language from the ALLOWED TARGET LANGUAGES list.
-5. If the requested TARGET LANGUAGE is not in the allowed list, return exactly:
-   INVALID_TARGET_LANGUAGE
-6. If the SOURCE LANGUAGE is not in the allowed list, return exactly:
-   INVALID_SOURCE_LANGUAGE
-7. If conversion is impossible, return exactly:
-   IMPOSSIBLE
-8. If required information is missing, return exactly:
-   INSUFFICIENT_DATA
+2) Compare the detected language with the user-declared source language.
 
-CONVERSION REQUIREMENTS:
+3) If the detected language DOES NOT match the declared source language:
+   Output ONLY the following message and nothing else:
+   Error: Detected language is [detected_language] but the declared source language is [source_language]. Please verify the requested language.
 
-- Preserve the original program logic and behavior.
-- Adapt syntax, structure, and idioms to the TARGET LANGUAGE.
-- Replace language-specific constructs with correct equivalents.
-- Implement proper error handling according to TARGET LANGUAGE standards.
-- Use proper typing if TARGET LANGUAGE is strongly typed.
-- Use correct module/package system of TARGET LANGUAGE.
-- Use secure equivalents for hashing, date/time, JSON, OOP constructs, etc.
-- Ensure the output is compilable/executable in TARGET LANGUAGE.
-- No deprecated APIs.
-- Production-ready structure.
+4) If the detected language matches the declared source language:
+   - Fully analyze the source code.
+   - Identify and fix any syntax errors, logical issues, or structural problems.
+   - Ensure the corrected version is valid and functional.
+   - Convert the corrected code into the requested target language.
+   - Adapt syntax, conventions, idioms, and best practices to the target language.
+   - Ensure the converted code is clean, optimized, and production-ready.
 
-ABSOLUTE OUTPUT POLICY:
+5) After conversion:
+   - Re-analyze the converted code.
+   - Fix any remaining errors.
+   - Ensure the final output is syntactically correct and executable.
 
-- Output code ONLY.
-- No explanations.
-- No markdown.
-- No comments.
-- No placeholders.
-- No pseudo-code.
-- No mixed syntax.
-- No remaining keywords from SOURCE LANGUAGE.
+OUTPUT RULES (STRICT):
+- If language mismatch → output ONLY the error message.
+- If conversion succeeds → output ONLY the final converted code.
+- Do NOT include explanations.
+- Do NOT include markdown formatting.
+- Do NOT include code fences.
+- Do NOT include comments unless strictly required for execution.
+- Do NOT add any extra text before or after the result.
 
-MANDATORY INTERNAL VALIDATION BEFORE OUTPUT:
-
-- Verify that all syntax elements belong exclusively to TARGET LANGUAGE.
-- Ensure no keywords from SOURCE LANGUAGE remain.
-- Ensure structural elements match TARGET LANGUAGE (e.g., Rust must contain fn/struct/impl, Java must contain class/public/static, Go must contain package/main/func, etc.).
-- If validation fails, regenerate internally before responding.
-
-FINAL OUTPUT FORMAT:
-Return only valid executable code written entirely in the TARGET LANGUAGE.
+The final output must be directly executable.
 `
 
                 },
@@ -249,6 +219,7 @@ Return ONLY the code. No explanations.
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
