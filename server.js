@@ -1,4 +1,4 @@
-console.log("BACKEND VERSION SDK GEMINI OK");
+console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
  * CodeVision AI - Secure Backend Proxy (Node.js)
@@ -10,7 +10,6 @@ const axios = require('axios');
 const cors = require('cors');
 const morgan = require('morgan');
 const bodyParser = require('body-parser');
-const { GoogleGenerativeAI } = require("@google/generative-ai");
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,25 +24,16 @@ app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
 /**
- * Initialize Gemini SDK
- */
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
-const geminiModel = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash-latest"
-});
-
-/**
  * Check environment variables
  */
 function checkEnv() {
     const missing = [];
     if (!process.env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
-    if (!process.env.GEMINI_API_KEY) missing.push('GEMINI_API_KEY');
 
     if (missing.length > 0) {
         console.warn(`[WARNING] Variables d'environnement manquantes : ${missing.join(', ')}`);
     } else {
-        console.log(`[INFO] Configuration API complète : Groq et Gemini détectés.`);
+        console.log(`[INFO] Configuration API complète : Groq détecté.`);
     }
 }
 checkEnv();
@@ -55,8 +45,7 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         config: {
-            groq: !!process.env.GROQ_API_KEY,
-            gemini: !!process.env.GEMINI_API_KEY
+            groq: !!process.env.GROQ_API_KEY
         }
     });
 });
@@ -75,34 +64,33 @@ app.post('/api/convert', async (req, res) => {
     }
 
     try {
-        const response = await axios.post('https://api.groq.com/openai/v1/chat/completions', {
-            model: "llama-3.3-70b-versatile",
-            messages: [
-                {
-                    role: "system",
-                    content:  `
+        // Prompt dynamique pour Groq
+        const prompt = `
 Convert the following code from ${fromLanguage || 'any language'} to the target language.
 Do not add explanations. Return only the converted code.
 
 Target language: ${toLanguage}
 Code to convert:
 ${sourceCode}
-`
+`;
 
-                },
-                {
-                    role: "user",
-                    content: sourceCode
-                }
-            ],
-            temperature: 0.1
-        }, {
-            headers: {
-                'Authorization': `Bearer ${apiKey}`,
-                'Content-Type': 'application/json'
+        const response = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+                model: "llama-3.3-70b-versatile",
+                messages: [
+                    { role: "system", content: prompt }
+                ],
+                temperature: 0.1
             },
-            timeout: 30000
-        });
+            {
+                headers: {
+                    'Authorization': `Bearer ${apiKey}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            }
+        );
 
         const convertedCode = response.data.choices[0].message.content.trim();
         res.json({ convertedCode });
@@ -116,72 +104,12 @@ ${sourceCode}
 });
 
 /**
- * Vision Endpoint (Gemini SDK version)
+ * Le serveur écoute
  */
-app.post('/api/vision', async (req, res) => {
-    const { image, mode, targetLanguage, errorCode } = req.body;
-
-    if (!process.env.GEMINI_API_KEY) {
-        return res.status(503).json({
-            error: 'API Gemini non configurée (GEMINI_API_KEY absente).'
-        });
-    }
-
-    try {
-        const base64Data = image.includes(",") ? image.split(',')[1] : image;
-
-        let prompt = "";
-
-        if (mode === 'correct') {
-            prompt = `
-Analyze this image of code and fix any bugs.
-Target Language: ${targetLanguage || 'Detected from image'}.
-${errorCode ? `User error context: ${errorCode}` : ''}
-
-Return:
-CODE:
-[Corrected code]
-
-NOTES:
-• Max 3 short fixes
-`;
-        } else {
-            prompt = `
-Generate functional ${targetLanguage || 'HTML/CSS'} code based on this user interface screenshot.
-Return ONLY the code. No explanations.
-`;
-        }
-
-        const result = await geminiModel.generateContent([
-            prompt,
-            {
-                inlineData: {
-                    mimeType: "image/png",
-                    data: base64Data
-                }
-            }
-        ]);
-
-        const fullResponse = result.response.text();
-
-        if (mode === 'correct') {
-            const split = fullResponse.split('NOTES:');
-            const code = split[0].replace('CODE:', '').trim();
-            const notes = split[1] ? split[1].trim() : "Corrections appliquées.";
-            res.json({ result: code, notes });
-        } else {
-            res.json({ result: fullResponse.trim(), notes: "" });
-        }
-
-    } catch (error) {
-        console.error('Gemini SDK Error:', error);
-        res.status(500).json({ error: "Erreur lors de l'analyse via Gemini." });
-    }
-});
-
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
