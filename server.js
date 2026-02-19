@@ -29,7 +29,7 @@ app.use(bodyParser.json({ limit: '10mb' }));
  */
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY || "");
 const geminiModel = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash"
+    model: "gemini-1.5-flash-latest"
 });
 
 /**
@@ -204,6 +204,7 @@ Return ONLY the code. No explanations.
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
