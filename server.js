@@ -88,9 +88,14 @@ ${code}
             }
         );
 
-        // Extraire et parser les findings
-        const findingsText = response.data.choices[0].message.content.trim();
-        const findings = JSON.parse(findingsText); // doit renvoyer un JSON structuré
+        // Récupérer le texte renvoyé par GROQ
+        let findingsText = response.data.choices[0].message.content.trim();
+
+        // Nettoyer les backticks et "json" s’il y en a
+        findingsText = findingsText.replace(/^```json\s*/, '').replace(/```$/g, '');
+
+        // Parser maintenant en JSON
+        const findings = JSON.parse(findingsText);
 
         res.json({ findings });
 
