@@ -14,10 +14,6 @@ const bodyParser = require('body-parser');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-app.get("/", (req, res) => {
-  res.send("Backend OK");
-});
-
 // Middleware
 app.use(cors());
 app.use(morgan('dev'));
@@ -29,11 +25,12 @@ app.use(bodyParser.json({ limit: '10mb' }));
 function checkEnv() {
     const missing = [];
     if (!process.env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
+    if (!process.env.GITHUB_PAT) missing.push('GITHUB_PAT');
 
     if (missing.length > 0) {
         console.warn(`[WARNING] Variables d'environnement manquantes : ${missing.join(', ')}`);
     } else {
-        console.log(`[INFO] Configuration API complète : Groq détecté.`);
+        console.log(`[INFO] Configuration API complète : GROQ et GitHub détectés.`);
     }
 }
 checkEnv();
@@ -45,19 +42,22 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         config: {
-            groq: !!process.env.GROQ_API_KEY
+            groq: !!process.env.GROQ_API_KEY,
+            github: !!process.env.GITHUB_PAT
         }
     });
 });
 
 /**
- * Code Conversion (Groq) - inchangé
+ * Audit intelligent de code (GitHub Code Scanning)
  */
-ute la route /api/audit :
-
 app.post('/api/audit', async (req, res) => {
     const { owner, repo } = req.body;
     const token = process.env.GITHUB_PAT;
+
+    if (!token) {
+        return res.status(503).json({ error: 'GITHUB_PAT non configuré.' });
+    }
 
     try {
         const response = await axios.get(
@@ -71,10 +71,14 @@ app.post('/api/audit', async (req, res) => {
         );
         res.json(response.data);
     } catch (err) {
-        console.error(err);
+        console.error('GitHub Audit Error:', err.response?.data || err.message);
         res.status(500).json({ error: err.message });
     }
 });
+
+/**
+ * Code Conversion (Groq)
+ */
 app.post('/api/convert', async (req, res) => {
     const { sourceCode, fromLanguage, toLanguage } = req.body;
     const apiKey = process.env.GROQ_API_KEY;
@@ -86,7 +90,6 @@ app.post('/api/convert', async (req, res) => {
     }
 
     try {
-        // Prompt dynamique pour Groq
         const prompt = `
 Convert the following code from ${fromLanguage || 'any language'} to the target language.
 Do not add explanations. Return only the converted code.
@@ -126,11 +129,12 @@ ${sourceCode}
 });
 
 /**
- * Le serveur écoute
+ * Démarrage du serveur
  */
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
