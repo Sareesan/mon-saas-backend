@@ -20,20 +20,13 @@ app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
 /**
- * Check environment variables
+ * Vérification des variables d'environnement
  */
-function checkEnv() {
-    const missing = [];
-    if (!process.env.GROQ_API_KEY) missing.push('GROQ_API_KEY');
-    if (!process.env.GITHUB_PAT) missing.push('GITHUB_PAT');
-
-    if (missing.length > 0) {
-        console.warn(`[WARNING] Variables d'environnement manquantes : ${missing.join(', ')}`);
-    } else {
-        console.log(`[INFO] Configuration API complète : GROQ et GitHub détectés.`);
-    }
+if (!process.env.GROQ_API_KEY) {
+    console.warn('[WARNING] GROQ_API_KEY manquante !');
+} else {
+    console.log('[INFO] GROQ_API_KEY détectée');
 }
-checkEnv();
 
 /**
  * Route racine pour test rapide
@@ -49,37 +42,63 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         config: {
-            groq: !!process.env.GROQ_API_KEY,
-            github: !!process.env.GITHUB_PAT
+            groq: !!process.env.GROQ_API_KEY
         }
     });
 });
 
 /**
- * Audit intelligent de code (GitHub Code Scanning)
+ * Audit intelligent de code (GROQ / Llama-3)
+ * Reçoit le code collé par l'utilisateur
  */
 app.post('/api/audit', async (req, res) => {
-    const { owner, repo } = req.body;
-    const token = process.env.GITHUB_PAT;
+    const { code } = req.body;
 
-    if (!token) {
-        return res.status(503).json({ error: 'GITHUB_PAT non configuré.' });
+    if (!code) {
+        return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
     }
 
     try {
-        const response = await axios.get(
-            `https://api.github.com/repos/${owner}/${repo}/code-scanning/alerts`,
+        const prompt = `
+Audit this code for security vulnerabilities, code quality issues, and best practices.
+Return a JSON array with each finding containing:
+- severity
+- title
+- description
+- file (if applicable)
+- line (if applicable)
+
+Code to analyze:
+${code}
+`;
+
+        const response = await axios.post(
+            'https://api.groq.com/openai/v1/chat/completions',
+            {
+                model: "llama-3.3-70b-versatile",
+                messages: [{ role: "system", content: prompt }],
+                temperature: 0.1
+            },
             {
                 headers: {
-                    Authorization: `token ${token}`,
-                    Accept: "application/vnd.github+json"
-                }
+                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
             }
         );
-        res.json(response.data);
-    } catch (err) {
-        console.error('GitHub Audit Error:', err.response?.data || err.message);
-        res.status(500).json({ error: err.message });
+
+        // Extraire et parser les findings
+        const findingsText = response.data.choices[0].message.content.trim();
+        const findings = JSON.parse(findingsText); // doit renvoyer un JSON structuré
+
+        res.json({ findings });
+
+    } catch (error) {
+        console.error('Audit Error:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: 'Erreur lors de l’audit du code.'
+        });
     }
 });
 
@@ -141,6 +160,7 @@ ${sourceCode}
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
