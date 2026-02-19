@@ -81,17 +81,12 @@ app.post('/api/convert', async (req, res) => {
                 {
                     role: "system",
                     content:  `
-You are a code converter. 
-You will receive source code in one of the following languages: HTML, Python, JavaScript, CSS, TypeScript, PHP, C++.
-You must convert it only to the requested target language: Python, Java, JavaScript, Go, Rust, or C#.
+Convert the following code from ${fromLanguage || 'any language'} to the target language.
+Do not add explanations. Return only the converted code.
 
-Convert the following code to the target language. 
-Do not add any explanations, comments, or extra text. 
-Return only the converted code.
-
-Target language: {{LANGUAGE}}  # e.g., Python, Java, JavaScript, Go, Rust, C#
+Target language: ${toLanguage}
 Code to convert:
-{{CODE}}
+${sourceCode}
 `
 
                 },
@@ -187,6 +182,7 @@ Return ONLY the code. No explanations.
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
