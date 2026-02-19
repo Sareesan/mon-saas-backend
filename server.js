@@ -91,8 +91,11 @@ ${code}
         // Récupérer le texte renvoyé par GROQ
         let findingsText = response.data.choices[0].message.content.trim();
 
-        // Nettoyer les backticks et "json" s’il y en a
+        // Nettoyer les backticks ``` et "json" s’il y en a
         findingsText = findingsText.replace(/^```json\s*/, '').replace(/```$/g, '');
+
+        // Supprimer les titres Markdown (#, ##, ###)
+        findingsText = findingsText.replace(/^#+\s.*$/gm, '').trim();
 
         // Parser maintenant en JSON
         const findings = JSON.parse(findingsText);
