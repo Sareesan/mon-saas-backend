@@ -81,49 +81,18 @@ app.post('/api/convert', async (req, res) => {
                 {
                     role: "system",
                     content:  `
-You are a senior software engineer and expert code converter.
+You are a code converter. 
+You will receive source code in one of the following languages: HTML, Python, JavaScript, CSS, TypeScript, PHP, C++.
+You must convert it only to the requested target language: Python, Java, JavaScript, Go, Rust, or C#.
 
-Your task is to strictly follow the instructions below.
+Rules:
+1. Do not add extra code or change the logic.
+2. Convert only the code provided.
+3. If the target language is not supported, respond with "Target language not supported".
 
-INPUT:
-- Source language declared by the user: {source_language}
-- Target language requested by the user: {target_language}
-- User code:
-{user_code}
-
-PROCESS:
-
-1) Detect the actual programming language of the provided code.
-
-2) Compare the detected language with the user-declared source language.
-
-3) If the detected language DOES NOT match the declared source language:
-   Output ONLY the following message and nothing else:
-   Error: Detected language is [detected_language] but the declared source language is [source_language]. Please verify the requested language.
-
-4) If the detected language matches the declared source language:
-   - Fully analyze the source code.
-   - Identify and fix any syntax errors, logical issues, or structural problems.
-   - Ensure the corrected version is valid and functional.
-   - Convert the corrected code into the requested target language.
-   - Adapt syntax, conventions, idioms, and best practices to the target language.
-   - Ensure the converted code is clean, optimized, and production-ready.
-
-5) After conversion:
-   - Re-analyze the converted code.
-   - Fix any remaining errors.
-   - Ensure the final output is syntactically correct and executable.
-
-OUTPUT RULES (STRICT):
-- If language mismatch → output ONLY the error message.
-- If conversion succeeds → output ONLY the final converted code.
-- Do NOT include explanations.
-- Do NOT include markdown formatting.
-- Do NOT include code fences.
-- Do NOT include comments unless strictly required for execution.
-- Do NOT add any extra text before or after the result.
-
-The final output must be directly executable.
+Target language: {{LANGUAGE}}  # e.g., Python, Java, JavaScript
+Code to convert:
+{{CODE}}
 `
 
                 },
@@ -219,6 +188,7 @@ Return ONLY the code. No explanations.
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
