@@ -60,14 +60,16 @@ app.post('/api/audit', async (req, res) => {
 
     try {
         const prompt = `
-Audit this code for security vulnerabilities, code quality issues, and best practices.
-Return a JSON array with each finding containing:
-- severity
+You are a security and code quality auditor AI.
+Analyze the following code for security vulnerabilities, bad practices, and code quality issues.
+Return ONLY a valid JSON array of findings with these keys:
+- severity (low, medium, high)
 - title
 - description
 - file (if applicable)
 - line (if applicable)
 
+DO NOT include any explanations, text, or Markdown outside the JSON.
 Code to analyze:
 ${code}
 `;
@@ -88,17 +90,26 @@ ${code}
             }
         );
 
-        // Récupérer le texte renvoyé par GROQ
         let findingsText = response.data.choices[0].message.content.trim();
 
-        // Nettoyer les backticks ``` et "json" s’il y en a
+        // Nettoyage des backticks ``` et "json"
         findingsText = findingsText.replace(/^```json\s*/, '').replace(/```$/g, '');
 
         // Supprimer les titres Markdown (#, ##, ###)
         findingsText = findingsText.replace(/^#+\s.*$/gm, '').trim();
 
-        // Parser maintenant en JSON
-        const findings = JSON.parse(findingsText);
+        // Parser JSON avec sécurité
+        let findings;
+        try {
+            findings = JSON.parse(findingsText);
+        } catch (parseErr) {
+            console.error('JSON parse failed:', parseErr.message);
+            console.error('Raw response:', findingsText);
+            return res.status(500).json({
+                error: 'Impossible de parser la réponse de l’audit en JSON',
+                raw: findingsText
+            });
+        }
 
         res.json({ findings });
 
