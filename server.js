@@ -53,6 +53,28 @@ app.get('/api/health', (req, res) => {
 /**
  * Code Conversion (Groq) - inchangé
  */
+ute la route /api/audit :
+
+app.post('/api/audit', async (req, res) => {
+    const { owner, repo } = req.body;
+    const token = process.env.GITHUB_PAT;
+
+    try {
+        const response = await axios.get(
+            `https://api.github.com/repos/${owner}/${repo}/code-scanning/alerts`,
+            {
+                headers: {
+                    Authorization: `token ${token}`,
+                    Accept: "application/vnd.github+json"
+                }
+            }
+        );
+        res.json(response.data);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ error: err.message });
+    }
+});
 app.post('/api/convert', async (req, res) => {
     const { sourceCode, fromLanguage, toLanguage } = req.body;
     const apiKey = process.env.GROQ_API_KEY;
@@ -109,6 +131,7 @@ ${sourceCode}
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
