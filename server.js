@@ -84,10 +84,7 @@ ${code}
                 temperature: 0.1
             },
             {
-                headers: {
-                    'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
                 timeout: 30000
             }
         );
@@ -97,12 +94,11 @@ ${code}
         findingsText = findingsText.replace(/^#+\s.*$/gm, '').trim();
 
         let findings;
-        try {
-            findings = JSON.parse(findingsText);
-        } catch (parseErr) {
+        try { findings = JSON.parse(findingsText); }
+        catch (parseErr) { 
             console.error('[Audit JSON parse failed]', parseErr.message);
             console.error('[Raw response]', findingsText);
-            return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText });
+            return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText }); 
         }
 
         res.json({ findings });
@@ -172,24 +168,23 @@ ${code}
     // Mode production
     try {
         const response = await axios.post(
-            'https://gemini.googleapis.com/v1/code:complete', // Vérifie l'URL exacte
+            'https://generativelanguage.googleapis.com/v1beta2/models/gemini-code-assist:generateMessage',
             {
-                model: "gemini-code-assist",
-                instructions: `Refactor this code to improve readability, modularity and best practices while keeping the exact same behavior:\n\n${code}`,
+                messages: [
+                    { role: "system", content: "You are an expert software engineer specialized in clean code and refactoring. Return ONLY the refactored code without explanations." },
+                    { role: "user", content: `Refactor this code to improve readability, modularity and best practices while keeping the exact same behavior:\n\n${code}` }
+                ],
                 temperature: 0.2
             },
             {
-                headers: {
-                    'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
-                    'Content-Type': 'application/json'
-                },
+                headers: { 'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`, 'Content-Type': 'application/json' },
                 timeout: 30000
             }
         );
 
         console.log('[DEBUG] Réponse Gemini brute:', response.data);
 
-        const refactoredCode = response.data.result?.trim() || "// Erreur : réponse vide de Gemini";
+        const refactoredCode = response.data?.candidates?.[0]?.content?.trim() || "// Erreur : réponse vide de Gemini";
 
         res.json({ demo: false, refactoredCode });
 
@@ -208,6 +203,7 @@ ${code}
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
