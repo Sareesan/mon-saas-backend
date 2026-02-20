@@ -28,6 +28,12 @@ if (!process.env.GROQ_API_KEY) {
     console.log('[INFO] GROQ_API_KEY détectée');
 }
 
+if (!process.env.OPENAI_API_KEY) {
+    console.warn('[WARNING] OPENAI_API_KEY manquante ! Mode DEMO activé');
+} else {
+    console.log('[INFO] OPENAI_API_KEY détectée');
+}
+
 /**
  * Route racine pour test rapide
  */
@@ -42,14 +48,14 @@ app.get('/api/health', (req, res) => {
     res.json({
         status: 'ok',
         config: {
-            groq: !!process.env.GROQ_API_KEY
+            groq: !!process.env.GROQ_API_KEY,
+            openai: !!process.env.OPENAI_API_KEY
         }
     });
 });
 
 /**
  * Audit intelligent de code (GROQ / Llama-3)
- * Reçoit le code collé par l'utilisateur
  */
 app.post('/api/audit', async (req, res) => {
     const { code } = req.body;
@@ -91,14 +97,9 @@ ${code}
         );
 
         let findingsText = response.data.choices[0].message.content.trim();
-
-        // Nettoyage des backticks ``` et "json"
         findingsText = findingsText.replace(/^```json\s*/, '').replace(/```$/g, '');
-
-        // Supprimer les titres Markdown (#, ##, ###)
         findingsText = findingsText.replace(/^#+\s.*$/gm, '').trim();
 
-        // Parser JSON avec sécurité
         let findings;
         try {
             findings = JSON.parse(findingsText);
@@ -148,9 +149,7 @@ ${sourceCode}
             'https://api.groq.com/openai/v1/chat/completions',
             {
                 model: "llama-3.3-70b-versatile",
-                messages: [
-                    { role: "system", content: prompt }
-                ],
+                messages: [{ role: "system", content: prompt }],
                 temperature: 0.1
             },
             {
@@ -175,7 +174,6 @@ ${sourceCode}
 
 /**
  * Refactoring automatique (OpenAI)
- * Mode DEMO si OPENAI_API_KEY absente
  */
 app.post('/api/refactor', async (req, res) => {
     const { code } = req.body;
@@ -204,7 +202,7 @@ ${code}
         });
     }
 
-    // MODE PRODUCTION (clé présente)
+    // MODE PRODUCTION
     try {
         const response = await axios.post(
             'https://api.openai.com/v1/chat/completions',
