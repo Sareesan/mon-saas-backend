@@ -35,7 +35,7 @@ if (!process.env.GEMINI_API_KEY) {
 }
 
 /**
- * Route racine pour test rapide
+ * Route racine
  */
 app.get("/", (req, res) => {
     res.send("Backend OK");
@@ -55,7 +55,7 @@ app.get('/api/health', (req, res) => {
 });
 
 /**
- * Audit intelligent de code (GROQ / Llama-3)
+ * Audit intelligent (GROQ / Llama-3)
  */
 app.post('/api/audit', async (req, res) => {
     const { code } = req.body;
@@ -71,7 +71,6 @@ Return ONLY a valid JSON array of findings with these keys:
 - description
 - file (if applicable)
 - line (if applicable)
-
 DO NOT include any explanations, text, or Markdown outside the JSON.
 Code to analyze:
 ${code}
@@ -101,59 +100,45 @@ ${code}
         try {
             findings = JSON.parse(findingsText);
         } catch (parseErr) {
-            console.error('JSON parse failed:', parseErr.message);
-            console.error('Raw response:', findingsText);
-            return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit en JSON', raw: findingsText });
+            console.error('[Audit JSON parse failed]', parseErr.message);
+            console.error('[Raw response]', findingsText);
+            return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText });
         }
 
         res.json({ findings });
 
     } catch (error) {
-        console.error('Audit Error:', error.response?.data || error.message);
+        console.error('[Audit Error]', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({ error: 'Erreur lors de l’audit du code.' });
     }
 });
 
 /**
- * Code Conversion (Groq)
+ * Conversion de code (GROQ)
  */
 app.post('/api/convert', async (req, res) => {
     const { sourceCode, fromLanguage, toLanguage } = req.body;
     const apiKey = process.env.GROQ_API_KEY;
-
-    if (!apiKey) return res.status(503).json({ error: 'API Groq non configurée (GROQ_API_KEY absente).' });
+    if (!apiKey) return res.status(503).json({ error: 'API Groq non configurée.' });
 
     try {
         const prompt = `
 Convert the following code from ${fromLanguage || 'any language'} to the target language.
 Do not add explanations. Return only the converted code.
-
 Target language: ${toLanguage}
 Code to convert:
 ${sourceCode}
 `;
-
         const response = await axios.post(
             'https://api.groq.com/openai/v1/chat/completions',
-            {
-                model: "llama-3.3-70b-versatile",
-                messages: [{ role: "system", content: prompt }],
-                temperature: 0.1
-            },
-            {
-                headers: {
-                    'Authorization': `Bearer ${apiKey}`,
-                    'Content-Type': 'application/json'
-                },
-                timeout: 30000
-            }
+            { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
+            { headers: { 'Authorization': `Bearer ${apiKey}`, 'Content-Type': 'application/json' }, timeout: 30000 }
         );
-
         const convertedCode = response.data.choices[0].message.content.trim();
         res.json({ convertedCode });
 
     } catch (error) {
-        console.error('Groq Error:', error.response?.data || error.message);
+        console.error('[Groq Error]', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({ error: 'Erreur lors de la conversion via Groq.' });
     }
 });
@@ -163,6 +148,9 @@ ${sourceCode}
  */
 app.post('/api/refactor', async (req, res) => {
     const { code } = req.body;
+    console.log('[DEBUG] /api/refactor appelé');
+    console.log('[DEBUG] Code reçu:', code);
+
     if (!code) return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
 
     // Mode DEMO si pas de clé
@@ -170,11 +158,9 @@ app.post('/api/refactor', async (req, res) => {
         return res.json({
             demo: true,
             refactoredCode: `// === MODE DEMO ACTIVÉ ===
-// La clé Gemini n'est pas encore configurée.
-// Voici une simulation de refactoring :
-
+// La clé Gemini n'est pas configurée.
+// Simulation de refactoring :
 ${code}
-
 // === Exemple d'amélioration simulée ===
 // - Variables renommées
 // - Structure simplifiée
@@ -186,7 +172,7 @@ ${code}
     // Mode production
     try {
         const response = await axios.post(
-            'https://gemini.googleapis.com/v1/code:complete', // Vérifie l'URL réelle dans ta doc Gemini
+            'https://gemini.googleapis.com/v1/code:complete', // Vérifie l'URL exacte
             {
                 model: "gemini-code-assist",
                 instructions: `Refactor this code to improve readability, modularity and best practices while keeping the exact same behavior:\n\n${code}`,
@@ -201,15 +187,14 @@ ${code}
             }
         );
 
+        console.log('[DEBUG] Réponse Gemini brute:', response.data);
+
         const refactoredCode = response.data.result?.trim() || "// Erreur : réponse vide de Gemini";
 
-        res.json({
-            demo: false,
-            refactoredCode
-        });
+        res.json({ demo: false, refactoredCode });
 
     } catch (error) {
-        console.error('Gemini Refactor Error:', error.response?.data || error.message);
+        console.error('[Gemini Refactor Error]', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({
             error: 'Erreur lors du refactoring automatique via Gemini.',
             details: error.response?.data || error.message
