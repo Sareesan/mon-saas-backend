@@ -5,6 +5,8 @@ console.log("BACKEND VERSION SDK GROQ OK");
  */
 
 require('dotenv').config();
+const fs = require('fs');
+const path = require('path');
 const express = require('express');
 const axios = require('axios');
 const cors = require('cors');
@@ -23,17 +25,11 @@ app.use(bodyParser.json({ limit: '10mb' }));
 /**
  * Vérification des variables d'environnement
  */
-if (!process.env.GROQ_API_KEY) {
-    console.warn('[WARNING] GROQ_API_KEY manquante !');
-} else {
-    console.log('[INFO] GROQ_API_KEY détectée');
-}
+if (!process.env.GROQ_API_KEY) console.warn('[WARNING] GROQ_API_KEY manquante !');
+else console.log('[INFO] GROQ_API_KEY détectée');
 
-if (!process.env.GEMINI_API_KEY) {
-    console.warn('[WARNING] GEMINI_API_KEY manquante ! Mode DEMO activé');
-} else {
-    console.log('[INFO] GEMINI_API_KEY détectée');
-}
+if (!process.env.GEMINI_API_KEY) console.warn('[WARNING] GEMINI_API_KEY manquante ! Mode DEMO activé');
+else console.log('[INFO] GEMINI_API_KEY détectée');
 
 /**
  * Route racine
@@ -84,22 +80,18 @@ ${code}
                 messages: [{ role: "system", content: prompt }],
                 temperature: 0.1
             },
-            {
-                headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' },
-                timeout: 30000
-            }
+            { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
         );
 
         let findingsText = response.data.choices[0].message.content.trim();
-        findingsText = findingsText.replace(/^```json\s*/, '').replace(/```$/g, '');
-        findingsText = findingsText.replace(/^#+\s.*$/gm, '').trim();
+        findingsText = findingsText.replace(/^```json\s*/, '').replace(/```$/g, '').replace(/^#+\s.*$/gm, '').trim();
 
         let findings;
         try { findings = JSON.parse(findingsText); }
-        catch (parseErr) { 
+        catch (parseErr) {
             console.error('[Audit JSON parse failed]', parseErr.message);
             console.error('[Raw response]', findingsText);
-            return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText }); 
+            return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText });
         }
 
         res.json({ findings });
@@ -154,29 +146,25 @@ app.post('/api/refactor', async (req, res) => {
     if (!process.env.GEMINI_API_KEY) {
         return res.json({
             demo: true,
-            refactoredCode: `// === MODE DEMO ACTIVÉ ===
-// La clé Gemini n'est pas configurée.
-// Simulation de refactoring :
-${code}
-// === Exemple d'amélioration simulée ===
-// - Variables renommées
-// - Structure simplifiée
-// - Code nettoyé
-`
+            refactoredCode: `// === MODE DEMO ACTIVÉ ===\n// La clé Gemini n'est pas configurée.\n${code}\n// === Exemple d'amélioration simulée ===\n// - Variables renommées\n// - Structure simplifiée\n// - Code nettoyé\n`
         });
     }
 
-    // Mode production
     try {
-        // Client Google Auth avec clé JSON
+        // Création du fichier temporaire à partir de la variable GEMINI_API_KEY
+        const credDir = path.join(__dirname, 'credentials');
+        if (!fs.existsSync(credDir)) fs.mkdirSync(credDir);
+        const keyFilePath = path.join(credDir, 'gemini-sa.json');
+        fs.writeFileSync(keyFilePath, process.env.GEMINI_API_KEY);
+
+        // Auth Google
         const auth = new GoogleAuth({
-            keyFile: process.env.GEMINI_API_KEY, // chemin vers gemini-sa.json
+            keyFile: keyFilePath,
             scopes: 'https://www.googleapis.com/auth/cloud-platform'
         });
         const client = await auth.getClient();
 
         const url = 'https://generativelanguage.googleapis.com/v1beta2/models/gemini-code-assist:generateMessage';
-
         const response = await client.request({
             url,
             method: 'POST',
@@ -191,7 +179,6 @@ ${code}
         });
 
         console.log('[DEBUG] Réponse Gemini brute:', response.data);
-
         const refactoredCode = response.data?.candidates?.[0]?.content?.trim() || "// Erreur : réponse vide de Gemini";
 
         res.json({ demo: false, refactoredCode });
@@ -211,6 +198,7 @@ ${code}
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
