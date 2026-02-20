@@ -174,6 +174,79 @@ ${sourceCode}
 });
 
 /**
+ * Refactoring automatique (OpenAI)
+ * Mode DEMO si OPENAI_API_KEY absente
+ */
+app.post('/api/refactor', async (req, res) => {
+    const { code } = req.body;
+
+    if (!code) {
+        return res.status(400).json({
+            error: 'Code obligatoire pour le refactoring.'
+        });
+    }
+
+    // MODE DEMO si pas de clé
+    if (!process.env.OPENAI_API_KEY) {
+        return res.json({
+            demo: true,
+            refactoredCode: `// === MODE DEMO ACTIVÉ ===
+// La clé OpenAI n'est pas encore configurée.
+// Voici une simulation de refactoring :
+
+${code}
+
+// === Exemple d'amélioration simulée ===
+// - Variables renommées
+// - Structure simplifiée
+// - Code nettoyé
+`
+        });
+    }
+
+    // MODE PRODUCTION (clé présente)
+    try {
+        const response = await axios.post(
+            'https://api.openai.com/v1/chat/completions',
+            {
+                model: "gpt-4o-mini",
+                messages: [
+                    {
+                        role: "system",
+                        content: "You are an expert software engineer specialized in clean code and refactoring. Return ONLY the refactored code without explanations."
+                    },
+                    {
+                        role: "user",
+                        content: `Refactor this code to improve readability, modularity and best practices while keeping the exact same behavior:\n\n${code}`
+                    }
+                ],
+                temperature: 0.2
+            },
+            {
+                headers: {
+                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Content-Type': 'application/json'
+                },
+                timeout: 30000
+            }
+        );
+
+        const refactoredCode = response.data.choices[0].message.content.trim();
+
+        res.json({
+            demo: false,
+            refactoredCode
+        });
+
+    } catch (error) {
+        console.error('OpenAI Refactor Error:', error.response?.data || error.message);
+        res.status(error.response?.status || 500).json({
+            error: 'Erreur lors du refactoring automatique.'
+        });
+    }
+});
+
+/**
  * Démarrage du serveur
  */
 app.listen(PORT, () => {
