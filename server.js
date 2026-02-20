@@ -28,10 +28,10 @@ if (!process.env.GROQ_API_KEY) {
     console.log('[INFO] GROQ_API_KEY détectée');
 }
 
-if (!process.env.OPENAI_API_KEY) {
-    console.warn('[WARNING] OPENAI_API_KEY manquante ! Mode DEMO activé');
+if (!process.env.GEMINI_API_KEY) {
+    console.warn('[WARNING] GEMINI_API_KEY manquante ! Mode DEMO activé');
 } else {
-    console.log('[INFO] OPENAI_API_KEY détectée');
+    console.log('[INFO] GEMINI_API_KEY détectée');
 }
 
 /**
@@ -49,7 +49,7 @@ app.get('/api/health', (req, res) => {
         status: 'ok',
         config: {
             groq: !!process.env.GROQ_API_KEY,
-            openai: !!process.env.OPENAI_API_KEY
+            gemini: !!process.env.GEMINI_API_KEY
         }
     });
 });
@@ -59,10 +59,7 @@ app.get('/api/health', (req, res) => {
  */
 app.post('/api/audit', async (req, res) => {
     const { code } = req.body;
-
-    if (!code) {
-        return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
-    }
+    if (!code) return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
 
     try {
         const prompt = `
@@ -106,19 +103,14 @@ ${code}
         } catch (parseErr) {
             console.error('JSON parse failed:', parseErr.message);
             console.error('Raw response:', findingsText);
-            return res.status(500).json({
-                error: 'Impossible de parser la réponse de l’audit en JSON',
-                raw: findingsText
-            });
+            return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit en JSON', raw: findingsText });
         }
 
         res.json({ findings });
 
     } catch (error) {
         console.error('Audit Error:', error.response?.data || error.message);
-        res.status(error.response?.status || 500).json({
-            error: 'Erreur lors de l’audit du code.'
-        });
+        res.status(error.response?.status || 500).json({ error: 'Erreur lors de l’audit du code.' });
     }
 });
 
@@ -129,11 +121,7 @@ app.post('/api/convert', async (req, res) => {
     const { sourceCode, fromLanguage, toLanguage } = req.body;
     const apiKey = process.env.GROQ_API_KEY;
 
-    if (!apiKey) {
-        return res.status(503).json({
-            error: 'API Groq non configurée (GROQ_API_KEY absente).'
-        });
-    }
+    if (!apiKey) return res.status(503).json({ error: 'API Groq non configurée (GROQ_API_KEY absente).' });
 
     try {
         const prompt = `
@@ -166,30 +154,23 @@ ${sourceCode}
 
     } catch (error) {
         console.error('Groq Error:', error.response?.data || error.message);
-        res.status(error.response?.status || 500).json({
-            error: 'Erreur lors de la conversion via Groq.'
-        });
+        res.status(error.response?.status || 500).json({ error: 'Erreur lors de la conversion via Groq.' });
     }
 });
 
 /**
- * Refactoring automatique (OpenAI)
+ * Refactoring automatique (Gemini)
  */
 app.post('/api/refactor', async (req, res) => {
     const { code } = req.body;
+    if (!code) return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
 
-    if (!code) {
-        return res.status(400).json({
-            error: 'Code obligatoire pour le refactoring.'
-        });
-    }
-
-    // MODE DEMO si pas de clé
-    if (!process.env.OPENAI_API_KEY) {
+    // Mode DEMO si pas de clé
+    if (!process.env.GEMINI_API_KEY) {
         return res.json({
             demo: true,
             refactoredCode: `// === MODE DEMO ACTIVÉ ===
-// La clé OpenAI n'est pas encore configurée.
+// La clé Gemini n'est pas encore configurée.
 // Voici une simulation de refactoring :
 
 ${code}
@@ -202,34 +183,25 @@ ${code}
         });
     }
 
-    // MODE PRODUCTION
+    // Mode production
     try {
         const response = await axios.post(
-            'https://api.openai.com/v1/chat/completions',
+            'https://gemini.googleapis.com/v1/code:complete', // Vérifie l'URL réelle dans ta doc Gemini
             {
-                model: "gpt-4o-mini",
-                messages: [
-                    {
-                        role: "system",
-                        content: "You are an expert software engineer specialized in clean code and refactoring. Return ONLY the refactored code without explanations."
-                    },
-                    {
-                        role: "user",
-                        content: `Refactor this code to improve readability, modularity and best practices while keeping the exact same behavior:\n\n${code}`
-                    }
-                ],
+                model: "gemini-code-assist",
+                instructions: `Refactor this code to improve readability, modularity and best practices while keeping the exact same behavior:\n\n${code}`,
                 temperature: 0.2
             },
             {
                 headers: {
-                    'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+                    'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`,
                     'Content-Type': 'application/json'
                 },
                 timeout: 30000
             }
         );
 
-        const refactoredCode = response.data.choices[0].message.content.trim();
+        const refactoredCode = response.data.result?.trim() || "// Erreur : réponse vide de Gemini";
 
         res.json({
             demo: false,
@@ -237,9 +209,10 @@ ${code}
         });
 
     } catch (error) {
-        console.error('OpenAI Refactor Error:', error.response?.data || error.message);
+        console.error('Gemini Refactor Error:', error.response?.data || error.message);
         res.status(error.response?.status || 500).json({
-            error: 'Erreur lors du refactoring automatique.'
+            error: 'Erreur lors du refactoring automatique via Gemini.',
+            details: error.response?.data || error.message
         });
     }
 });
@@ -250,6 +223,7 @@ ${code}
 app.listen(PORT, () => {
     console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
