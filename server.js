@@ -10,6 +10,7 @@ const axios = require('axios');
 const cors = require('cors');
 const morgan = require('morgan');
 const bodyParser = require('body-parser');
+const { GoogleAuth } = require('google-auth-library'); // pour Gemini
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -167,20 +168,27 @@ ${code}
 
     // Mode production
     try {
-        const response = await axios.post(
-            'https://generativelanguage.googleapis.com/v1beta2/models/gemini-code-assist:generateMessage',
-            {
+        // Client Google Auth avec clé JSON
+        const auth = new GoogleAuth({
+            keyFile: process.env.GEMINI_API_KEY, // chemin vers gemini-sa.json
+            scopes: 'https://www.googleapis.com/auth/cloud-platform'
+        });
+        const client = await auth.getClient();
+
+        const url = 'https://generativelanguage.googleapis.com/v1beta2/models/gemini-code-assist:generateMessage';
+
+        const response = await client.request({
+            url,
+            method: 'POST',
+            data: {
                 messages: [
                     { role: "system", content: "You are an expert software engineer specialized in clean code and refactoring. Return ONLY the refactored code without explanations." },
                     { role: "user", content: `Refactor this code to improve readability, modularity and best practices while keeping the exact same behavior:\n\n${code}` }
                 ],
                 temperature: 0.2
             },
-            {
-                headers: { 'Authorization': `Bearer ${process.env.GEMINI_API_KEY}`, 'Content-Type': 'application/json' },
-                timeout: 30000
-            }
-        );
+            timeout: 30000
+        });
 
         console.log('[DEBUG] Réponse Gemini brute:', response.data);
 
