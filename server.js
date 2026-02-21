@@ -28,7 +28,7 @@ else
   console.log('[INFO] GROQ_API_KEY détectée');
 
 if (!process.env.REFACTORING_API_KEY)
-  console.warn('[WARNING] REFACTORING_API_KEY manquante !');
+  console.warn('[WARNING] REFACTORING_API_KEY manquante ! Mode refactor désactivé');
 else
   console.log('[INFO] REFACTORING_API_KEY détectée');
 
@@ -57,8 +57,7 @@ app.get('/api/health', (req, res) => {
  */
 app.post('/api/audit', async (req, res) => {
   const { code } = req.body;
-  if (!code)
-    return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
+  if (!code) return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
 
   try {
     const prompt = `
@@ -77,35 +76,31 @@ ${code}
 
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "system", content: prompt }],
-        temperature: 0.1
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
+      { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
     let findingsText = response.data.choices[0].message.content.trim();
     findingsText = findingsText
       .replace(/^```json\s*/, '')
       .replace(/```$/g, '')
+      .replace(/^#+\s.*$/gm, '')
       .trim();
 
-    const findings = JSON.parse(findingsText);
+    let findings;
+    try {
+      findings = JSON.parse(findingsText);
+    } catch (parseErr) {
+      console.error('[Audit JSON parse failed]', parseErr.message);
+      console.error('[Raw response]', findingsText);
+      return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText });
+    }
 
     res.json({ findings });
 
   } catch (error) {
     console.error('[Audit Error]', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: 'Erreur lors de l’audit du code.'
-    });
+    res.status(error.response?.status || 500).json({ error: 'Erreur lors de l’audit du code.' });
   }
 });
 
@@ -115,8 +110,7 @@ ${code}
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, fromLanguage, toLanguage } = req.body;
 
-  if (!process.env.GROQ_API_KEY)
-    return res.status(503).json({ error: 'API Groq non configurée.' });
+  if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'API Groq non configurée.' });
 
   try {
     const prompt = `
@@ -130,88 +124,48 @@ ${sourceCode}
 
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "system", content: prompt }],
-        temperature: 0.1
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
+      { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
-    const convertedCode =
-      response.data.choices[0].message.content.trim();
-
+    const convertedCode = response.data.choices[0].message.content.trim();
     res.json({ convertedCode });
 
   } catch (error) {
     console.error('[Groq Convert Error]', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: 'Erreur lors de la conversion via Groq.'
-    });
+    res.status(error.response?.status || 500).json({ error: 'Erreur lors de la conversion via Groq.' });
   }
 });
 
 /**
- * Refactoring automatique (via REFACTORING_API_KEY)
+ * Refactoring automatique (CometAPI)
  */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
 
-  if (!code)
-    return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
+  if (!code) return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
+  if (!process.env.REFACTORING_API_KEY) return res.status(503).json({ error: 'Clé REFACTORING_API_KEY non configurée.' });
 
-  if (!process.env.REFACTORING_API_KEY)
-    return res.status(503).json({ error: 'Clé REFACTORING_API_KEY non configurée.' });
+  console.log('[DEBUG] /api/refactor appelé');
+  console.log('[DEBUG] Code reçu:', code);
 
   try {
-    const prompt = `
-You are an expert senior software engineer specialized in clean code and refactoring.
-
-Refactor the following code to:
-- Improve readability
-- Improve structure
-- Improve maintainability
-- Apply best practices
-- Keep EXACT same behavior
-
-Return ONLY the refactored code.
-Do not add explanations or markdown.
-
-Code:
-${code}
-`;
-
     const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      {
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "system", content: prompt }],
-        temperature: 0.2
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 30000
-      }
+      'https://api.cometapi.com/refactor',
+      { code },
+      { headers: { 'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
-    const refactoredCode =
-      response.data.choices[0].message.content.trim();
+    console.log('[DEBUG] Réponse brute CometAPI:', response.data);
+    const refactoredCode = response.data.refactoredCode || "// Erreur : réponse vide de CometAPI";
 
     res.json({ refactoredCode });
 
   } catch (error) {
     console.error('[Refactor Error]', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: 'Erreur lors du refactoring via REFACTORING_API_KEY.'
+      error: 'Erreur lors du refactoring via CometAPI.',
+      details: error.response?.data || error.message
     });
   }
 });
