@@ -27,6 +27,11 @@ if (!process.env.GROQ_API_KEY)
 else
   console.log('[INFO] GROQ_API_KEY détectée');
 
+if (!process.env.REFACTORING_API_KEY)
+  console.warn('[WARNING] REFACTORING_API_KEY manquante !');
+else
+  console.log('[INFO] REFACTORING_API_KEY détectée');
+
 /**
  * Route racine
  */
@@ -41,7 +46,8 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     config: {
-      groq: !!process.env.GROQ_API_KEY
+      groq: !!process.env.GROQ_API_KEY,
+      refactoring: !!process.env.REFACTORING_API_KEY
     }
   });
 });
@@ -152,15 +158,16 @@ ${sourceCode}
 });
 
 /**
- * Refactoring automatique (GROQ - LLaMA 3.3)
+ * Refactoring automatique (via REFACTORING_API_KEY)
  */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
 
   if (!code)
-    return res.status(400).json({
-      error: 'Code obligatoire pour le refactoring.'
-    });
+    return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
+
+  if (!process.env.REFACTORING_API_KEY)
+    return res.status(503).json({ error: 'Clé REFACTORING_API_KEY non configurée.' });
 
   try {
     const prompt = `
@@ -189,7 +196,7 @@ ${code}
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.GROQ_API_KEY}`,
+          'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
           'Content-Type': 'application/json'
         },
         timeout: 30000
@@ -202,9 +209,9 @@ ${code}
     res.json({ refactoredCode });
 
   } catch (error) {
-    console.error('[Groq Refactor Error]', error.response?.data || error.message);
+    console.error('[Refactor Error]', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({
-      error: 'Erreur lors du refactoring via Groq.'
+      error: 'Erreur lors du refactoring via REFACTORING_API_KEY.'
     });
   }
 });
@@ -215,6 +222,7 @@ ${code}
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
