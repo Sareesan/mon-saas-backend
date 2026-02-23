@@ -151,9 +151,9 @@ app.post('/api/refactor', async (req, res) => {
   console.log('[DEBUG] Code reçu:', code);
 
   try {
-    // Appel au Router API Hugging Face
+    // Appel au Router API Hugging Face (URL corrigée)
     const response = await axios.post(
-      'https://router.huggingface.co/api-inference/models/hmnshudhmn24/universal-code-refactor-32b',
+      'https://api-inference.huggingface.co/models/hmnshudhmn24/universal-code-refactor-32b',
       { inputs: code },
       {
         headers: {
@@ -184,12 +184,3 @@ app.post('/api/refactor', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
-
-
-
-
-
-
-
-
-
