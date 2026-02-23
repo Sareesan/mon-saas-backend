@@ -150,12 +150,14 @@ app.post('/api/refactor', async (req, res) => {
   console.log('[DEBUG] Code reçu:', code);
 
   try {
-    // Appel au Router API Hugging Face Chat Completions
     const response = await axios.post(
       'https://router.huggingface.co/v1/chat/completions',
       {
-        model: "bigcode/starcoderplus-15b",
-        messages: [{ role: "user", content: `Refactor this code:\n${code}` }]
+        model: "Qwen/Qwen3-Coder-Next:fastest",
+        messages: [
+          { role: "system", content: "You are an AI that refactors code. Return cleaned/refactored code only." },
+          { role: "user", content: `Refactor this code:\n${code}` }
+        ]
       },
       {
         headers: {
@@ -167,7 +169,6 @@ app.post('/api/refactor', async (req, res) => {
     );
 
     const refactoredCode = response.data?.choices?.[0]?.message?.content || "";
-
     res.json({ refactoredCode });
 
   } catch (error) {
@@ -185,4 +186,3 @@ app.post('/api/refactor', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
-
