@@ -139,6 +139,7 @@ ${sourceCode}
 
 /**
  * Refactoring automatique via Hugging Face Universal Code Refactor 32B
+ * (Router API corrigé)
  */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
@@ -150,9 +151,9 @@ app.post('/api/refactor', async (req, res) => {
   console.log('[DEBUG] Code reçu:', code);
 
   try {
-    // Appel à l'API Hugging Face Inference avec modèle refactoring
+    // Appel au Router API Hugging Face
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/hmnshudhmn24/universal-code-refactor-32b',
+      'https://router.huggingface.co/api-inference/models/hmnshudhmn24/universal-code-refactor-32b',
       { inputs: code },
       {
         headers: {
@@ -183,6 +184,7 @@ app.post('/api/refactor', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
