@@ -138,8 +138,7 @@ ${sourceCode}
 });
 
 /**
- * Refactoring automatique via Hugging Face Universal Code Refactor 32B
- * (Router API corrigé)
+ * Refactoring automatique via Hugging Face Router API
  */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
@@ -151,10 +150,13 @@ app.post('/api/refactor', async (req, res) => {
   console.log('[DEBUG] Code reçu:', code);
 
   try {
-    // Appel au Router API Hugging Face (URL corrigée)
+    // Appel au Router API Hugging Face Chat Completions
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/hmnshudhmn24/universal-code-refactor-32b',
-      { inputs: code },
+      'https://router.huggingface.co/v1/chat/completions',
+      {
+        model: "bigcode/starcoderplus-15b",
+        messages: [{ role: "user", content: `Refactor this code:\n${code}` }]
+      },
       {
         headers: {
           'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
@@ -164,8 +166,7 @@ app.post('/api/refactor', async (req, res) => {
       }
     );
 
-    // Récupère la sortie générée par le modèle
-    const refactoredCode = response.data?.[0]?.generated_text || response.data || "";
+    const refactoredCode = response.data?.choices?.[0]?.message?.content || "";
 
     res.json({ refactoredCode });
 
@@ -184,3 +185,4 @@ app.post('/api/refactor', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
