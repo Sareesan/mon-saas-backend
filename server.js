@@ -15,9 +15,19 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors());
+app.use(cors({
+  origin: 'https://ton-site-frontend.onrender.com', // Remplace par ton URL frontend
+  methods: ['GET','POST','OPTIONS'],
+  allowedHeaders: ['Content-Type','Authorization']
+}));
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
+
+// Log de toutes les requêtes pour debug
+app.use((req, res, next) => {
+  console.log(`[LOG] ${req.method} ${req.url}`);
+  next();
+});
 
 /**
  * Vérification des variables d'environnement
@@ -71,7 +81,7 @@ ${code}
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 60000 }
     );
 
     let findingsText = response.data.choices[0].message.content.trim();
@@ -119,7 +129,7 @@ ${sourceCode}
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 60000 }
     );
 
     const convertedCode = response.data.choices[0].message.content.trim();
@@ -152,7 +162,7 @@ ${code}
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 60000 }
     );
 
     const refactoredCode = response.data.choices[0].message.content.trim();
@@ -170,7 +180,3 @@ ${code}
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
-
-
-
-
