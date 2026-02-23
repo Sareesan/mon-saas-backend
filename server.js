@@ -15,19 +15,9 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 // Middleware
-app.use(cors({
-  origin: 'https://ton-site-frontend.onrender.com', // Remplace par ton URL frontend
-  methods: ['GET','POST','OPTIONS'],
-  allowedHeaders: ['Content-Type','Authorization']
-}));
+app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
-
-// Log de toutes les requêtes pour debug
-app.use((req, res, next) => {
-  console.log(`[LOG] ${req.method} ${req.url}`);
-  next();
-});
 
 /**
  * Vérification des variables d'environnement
@@ -36,6 +26,11 @@ if (!process.env.GROQ_API_KEY)
   console.warn('[WARNING] GROQ_API_KEY manquante !');
 else
   console.log('[INFO] GROQ_API_KEY détectée');
+
+if (!process.env.REFACTORING_API_KEY)
+  console.warn('[WARNING] REFACTORING_API_KEY manquante ! Mode refactor désactivé');
+else
+  console.log('[INFO] REFACTORING_API_KEY détectée');
 
 /**
  * Route racine
@@ -51,7 +46,8 @@ app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
     config: {
-      groq: !!process.env.GROQ_API_KEY
+      groq: !!process.env.GROQ_API_KEY,
+      refactoring: !!process.env.REFACTORING_API_KEY
     }
   });
 });
@@ -81,7 +77,7 @@ ${code}
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 60000 }
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
     let findingsText = response.data.choices[0].message.content.trim();
@@ -129,7 +125,7 @@ ${sourceCode}
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 60000 }
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
     const convertedCode = response.data.choices[0].message.content.trim();
@@ -142,35 +138,35 @@ ${sourceCode}
 });
 
 /**
- * Refactoring automatique (GROQ)
+ * Refactoring automatique (CometAPI)
  */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
 
   if (!code) return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
-  if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'API Groq non configurée.' });
+  if (!process.env.REFACTORING_API_KEY) return res.status(503).json({ error: 'Clé REFACTORING_API_KEY non configurée.' });
+
+  console.log('[DEBUG] /api/refactor appelé');
+  console.log('[DEBUG] Code reçu:', code);
 
   try {
-    const prompt = `
-Refactor the following code for better readability, performance, and best practices.
-Return ONLY the refactored code without explanations.
-
-Code:
-${code}
-`;
-
     const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 60000 }
+      'https://api.cometapi.com/refactor',
+      { code },
+      { headers: { 'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
-    const refactoredCode = response.data.choices[0].message.content.trim();
+    console.log('[DEBUG] Réponse brute CometAPI:', response.data);
+    const refactoredCode = response.data.refactoredCode || "// Erreur : réponse vide de CometAPI";
+
     res.json({ refactoredCode });
 
   } catch (error) {
     console.error('[Refactor Error]', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ error: 'Erreur lors du refactoring via Groq.' });
+    res.status(error.response?.status || 500).json({
+      error: 'Erreur lors du refactoring via CometAPI.',
+      details: error.response?.data || error.message
+    });
   }
 });
 
@@ -180,3 +176,6 @@ ${code}
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
+
+
