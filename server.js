@@ -138,28 +138,41 @@ ${sourceCode}
 });
 
 /**
- * Refactoring automatique
- * Version locale / dummy sans CometAPI
+ * Refactoring automatique via Hugging Face
  */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
 
   if (!code) return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
+  if (!process.env.REFACTORING_API_KEY) return res.status(503).json({ error: 'Clé REFACTORING_API_KEY non configurée.' });
 
   console.log('[DEBUG] /api/refactor appelé');
   console.log('[DEBUG] Code reçu:', code);
 
   try {
-    // Ici tu peux appliquer un vrai refactoring local ou renvoyer simplement le code pour test
-    const refactoredCode = code; // placeholder: renvoie le code tel quel
+    // Appel à Hugging Face Inference API
+    const response = await axios.post(
+      'https://api-inference.huggingface.co/models/<NOM_DU_MODELE_REFRACTORING>',
+      { inputs: code },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 30000
+      }
+    );
+
+    // Récupère la sortie générée par le modèle
+    const refactoredCode = response.data?.[0]?.generated_text || response.data || "// Erreur : réponse vide de Hugging Face";
 
     res.json({ refactoredCode });
 
   } catch (error) {
-    console.error('[Refactor Error]', error.message);
-    res.status(500).json({
-      error: 'Erreur lors du refactoring.',
-      details: error.message
+    console.error('[Refactor Error]', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Erreur lors du refactoring via Hugging Face.',
+      details: error.response?.data || error.message
     });
   }
 });
@@ -170,6 +183,7 @@ app.post('/api/refactor', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
