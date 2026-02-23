@@ -138,7 +138,7 @@ ${sourceCode}
 });
 
 /**
- * Refactoring automatique via Hugging Face
+ * Refactoring automatique via Hugging Face Universal Code Refactor 32B
  */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
@@ -150,21 +150,21 @@ app.post('/api/refactor', async (req, res) => {
   console.log('[DEBUG] Code reçu:', code);
 
   try {
-    // Appel à Hugging Face Inference API
+    // Appel à l'API Hugging Face Inference avec modèle refactoring
     const response = await axios.post(
-      'https://api-inference.huggingface.co/models/<NOM_DU_MODELE_REFRACTORING>',
+      'https://api-inference.huggingface.co/models/hmnshudhmn24/universal-code-refactor-32b',
       { inputs: code },
       {
         headers: {
           'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
           'Content-Type': 'application/json'
         },
-        timeout: 30000
+        timeout: 60000
       }
     );
 
     // Récupère la sortie générée par le modèle
-    const refactoredCode = response.data?.[0]?.generated_text || response.data || "// Erreur : réponse vide de Hugging Face";
+    const refactoredCode = response.data?.[0]?.generated_text || response.data || "";
 
     res.json({ refactoredCode });
 
@@ -183,6 +183,7 @@ app.post('/api/refactor', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
 
 
