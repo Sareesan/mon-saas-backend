@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Backend sécurisé avec Supabase Users + Paiements + Pass Premium
+ * CodeVision AI - Backend sécurisé complet (Users + Paiements + Admin)
  */
 
 require('dotenv').config();
@@ -33,13 +33,25 @@ else console.log('[INFO] REFACTORING_API_KEY détectée');
 
 if (!process.env.DATA_BASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
   console.warn('[WARNING] Supabase non configurée !');
-else
-  console.log('[INFO] Supabase détectée');
+else console.log('[INFO] Supabase détectée');
+
+if (!process.env.ADMIN_EMAIL) console.warn('[WARNING] ADMIN_EMAIL non défini !');
 
 const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+/**
+ * Middleware Admin
+ */
+const adminMiddleware = (req, res, next) => {
+  const adminEmail = process.env.ADMIN_EMAIL;
+  if (!req.headers['x-admin-email'] || req.headers['x-admin-email'] !== adminEmail) {
+    return res.status(403).json({ error: 'Accès admin refusé' });
+  }
+  next();
+};
 
 /**
  * Route racine
@@ -137,7 +149,6 @@ app.post('/login', async (req, res) => {
       const expires = new Date(user.premium_expires_at);
       if (expires > now) premiumActive = true;
       else {
-        // Expiré → reset pass + essais gratuits
         await supabase.from('DATA BASE PROFILES')
           .update({
             premium_active: false,
@@ -173,13 +184,11 @@ app.post('/login', async (req, res) => {
  * 🔹 Paiements
  */
 
-// Ajouter un paiement confirmé et activer premium
 app.post('/payments/add', async (req, res) => {
   const { user_id, paypal_order_id, amount } = req.body;
   if (!user_id || !paypal_order_id || !amount) return res.status(400).json({ error: 'user_id, paypal_order_id et amount requis.' });
 
   try {
-    // Ajouter dans DATA BASE PAYMENTS
     const { data: payment, error: paymentError } = await supabase
       .from('DATA BASE PAYMENTS')
       .insert([{
@@ -218,8 +227,7 @@ app.post('/payments/add', async (req, res) => {
  * 🔹 Admin
  */
 
-// Liste utilisateurs
-app.get('/admin/users', async (req, res) => {
+app.get('/admin/users', adminMiddleware, async (req, res) => {
   try {
     const { data, error } = await supabase
       .from('DATA BASE PROFILES')
@@ -233,8 +241,26 @@ app.get('/admin/users', async (req, res) => {
   }
 });
 
-// Promouvoir utilisateur
-app.post('/admin/promote', async (req, res) => {
+// Statistiques admin
+app.get('/admin/stats', adminMiddleware, async (req, res) => {
+  try {
+    const { data: users } = await supabase.from('DATA BASE PROFILES').select('*');
+    const { data: payments } = await supabase.from('DATA BASE PAYMENTS').select('*');
+
+    const totalUsers = users.length;
+    const totalPremium = users.filter(u => u.premium_active).length;
+    const totalPayments = payments.filter(p => p.status === 'confirmed').length;
+    const revenue = payments.filter(p => p.status === 'confirmed').reduce((sum, p) => sum + parseFloat(p.amount), 0);
+
+    res.json({ totalUsers, totalPremium, totalPayments, revenue });
+  } catch (err) {
+    console.error('[Admin Stats]', err.message);
+    res.status(500).json({ error: 'Impossible de récupérer les stats.' });
+  }
+});
+
+// Promouvoir
+app.post('/admin/promote', adminMiddleware, async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: 'user_id requis' });
 
@@ -259,8 +285,8 @@ app.post('/admin/promote', async (req, res) => {
   }
 });
 
-// Rétrograder utilisateur
-app.post('/admin/demote', async (req, res) => {
+// Rétrograder
+app.post('/admin/demote', adminMiddleware, async (req, res) => {
   const { user_id } = req.body;
   if (!user_id) return res.status(400).json({ error: 'user_id requis' });
 
@@ -280,12 +306,12 @@ app.post('/admin/demote', async (req, res) => {
 });
 
 /**
- * 🔹 Routes existantes (GROQ / Hugging Face)
+ * 🔹 Routes existantes GROQ / Hugging Face
  * Inchangées
  */
-app.post('/api/audit', async (req, res) => {/* inchangé */});
-app.post('/api/convert', async (req, res) => {/* inchangé */});
-app.post('/api/refactor', async (req, res) => {/* inchangé */});
+app.post('/api/audit', async (req, res) => { /* inchangé */ });
+app.post('/api/convert', async (req, res) => { /* inchangé */ });
+app.post('/api/refactor', async (req, res) => { /* inchangé */ });
 
 /**
  * Démarrage serveur
@@ -294,4 +320,3 @@ app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
   console.log(`[SERVER] Supabase backend disponible sur https://mon-saas-backend.onrender.com`);
 });
-
