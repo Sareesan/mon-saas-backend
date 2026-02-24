@@ -12,6 +12,7 @@ const morgan = require('morgan');
 const bodyParser = require('body-parser');
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcrypt');
+const { v4: uuidv4 } = require('uuid'); // Génération de user_id
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -86,10 +87,14 @@ app.post('/signup', async (req, res) => {
     // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Générer un user_id unique
+    const newUserId = uuidv4();
+
     // Insérer le nouvel utilisateur
     const { data, error } = await supabase
       .from('DATA BASE PROFILES')
       .insert([{
+        user_id: newUserId,
         email: normalizedEmail,
         password: hashedPassword,
         username: username || null,
@@ -99,7 +104,7 @@ app.post('/signup', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    res.json({ message: 'Utilisateur créé avec succès', user: { email: data[0].email, username: data[0].username } });
+    res.json({ message: 'Utilisateur créé avec succès', user: { email: data[0].email, username: data[0].username, user_id: data[0].user_id } });
 
   } catch (err) {
     console.error('[Signup Error]', err.message);
@@ -128,7 +133,7 @@ app.post('/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
-    res.json({ message: 'Connexion réussie', user: { email: user.email, username: user.username } });
+    res.json({ message: 'Connexion réussie', user: { email: user.email, username: user.username, user_id: user.user_id } });
 
   } catch (err) {
     console.error('[Login Error]', err.message);
@@ -267,5 +272,3 @@ app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
   console.log(`[SERVER] Supabase backend disponible sur https://mon-saas-backend.onrender.com`);
 });
-
-
