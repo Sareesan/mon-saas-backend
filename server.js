@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Secure Backend Proxy (Node.js) avec Supabase Users
+ * CodeVision AI - Secure Backend Proxy (Node.js) avec Supabase Users corrigé
  */
 
 require('dotenv').config();
@@ -66,7 +66,7 @@ app.get('/api/health', (req, res) => {
 });
 
 /**
- * 🔹 Routes Supabase - Users
+ * 🔹 Routes Supabase - Users corrigées
  */
 
 // Inscription utilisateur
@@ -76,12 +76,24 @@ app.post('/signup', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
-    // Hasher le mot de passe avant insertion
+    const normalizedEmail = email.trim().toLowerCase();
+
+    // Vérifier si l'utilisateur existe déjà
+    const { data: existingUser } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', normalizedEmail)
+      .single();
+
+    if (existingUser) return res.status(400).json({ error: 'Compte déjà existant.' });
+
+    // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
 
     const { data, error } = await supabase
-      .from('users') // Assure-toi d'avoir une table 'users' dans Supabase
-      .insert([{ email, password: hashedPassword }]);
+      .from('users')
+      .insert([{ email: normalizedEmail, password: hashedPassword }])
+      .select();
 
     if (error) return res.status(400).json({ error: error.message });
 
@@ -99,10 +111,12 @@ app.post('/login', async (req, res) => {
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
+    const normalizedEmail = email.trim().toLowerCase();
+
     const { data, error } = await supabase
       .from('users')
       .select('*')
-      .eq('email', email)
+      .eq('email', normalizedEmail)
       .single();
 
     if (error || !data) return res.status(400).json({ error: 'Utilisateur non trouvé.' });
