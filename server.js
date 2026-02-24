@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Secure Backend Proxy (Node.js)
+ * CodeVision AI - Secure Backend Proxy (Node.js) avec Supabase Users
  */
 
 require('dotenv').config();
@@ -10,6 +10,8 @@ const axios = require('axios');
 const cors = require('cors');
 const morgan = require('morgan');
 const bodyParser = require('body-parser');
+const { createClient } = require('@supabase/supabase-js');
+const bcrypt = require('bcrypt');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -32,6 +34,16 @@ if (!process.env.REFACTORING_API_KEY)
 else
   console.log('[INFO] REFACTORING_API_KEY détectée');
 
+if (!process.env.DATA_BASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
+  console.warn('[WARNING] Supabase non configurée !');
+else
+  console.log('[INFO] Supabase détectée');
+
+const supabase = createClient(
+  process.env.DATA_BASE_URL,
+  process.env.SUPABASE_SERVICE_ROLE_KEY
+);
+
 /**
  * Route racine
  */
@@ -47,14 +59,69 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     config: {
       groq: !!process.env.GROQ_API_KEY,
-      refactoring: !!process.env.REFACTORING_API_KEY
+      refactoring: !!process.env.REFACTORING_API_KEY,
+      supabase: !!process.env.DATA_BASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY
     }
   });
 });
 
 /**
- * Audit intelligent (GROQ / Llama-3)
+ * 🔹 Routes Supabase - Users
  */
+
+// Inscription utilisateur
+app.post('/signup', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
+
+  try {
+    // Hasher le mot de passe avant insertion
+    const hashedPassword = await bcrypt.hash(password, 10);
+
+    const { data, error } = await supabase
+      .from('users') // Assure-toi d'avoir une table 'users' dans Supabase
+      .insert([{ email, password: hashedPassword }]);
+
+    if (error) return res.status(400).json({ error: error.message });
+
+    res.json({ message: 'Utilisateur créé avec succès', data });
+  } catch (err) {
+    console.error('[Signup Error]', err.message);
+    res.status(500).json({ error: 'Erreur lors de la création de l’utilisateur.' });
+  }
+});
+
+// Connexion utilisateur
+app.post('/login', async (req, res) => {
+  const { email, password } = req.body;
+
+  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
+
+  try {
+    const { data, error } = await supabase
+      .from('users')
+      .select('*')
+      .eq('email', email)
+      .single();
+
+    if (error || !data) return res.status(400).json({ error: 'Utilisateur non trouvé.' });
+
+    const match = await bcrypt.compare(password, data.password);
+    if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
+
+    res.json({ message: 'Connexion réussie', user: { email: data.email } });
+  } catch (err) {
+    console.error('[Login Error]', err.message);
+    res.status(500).json({ error: 'Erreur lors de la connexion.' });
+  }
+});
+
+/**
+ * 🔹 Routes existantes (GROQ / Hugging Face)
+ * Je n’y touche pas, tout reste identique
+ */
+
 app.post('/api/audit', async (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
@@ -104,9 +171,6 @@ ${code}
   }
 });
 
-/**
- * Conversion de code (GROQ)
- */
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, fromLanguage, toLanguage } = req.body;
 
@@ -137,9 +201,6 @@ ${sourceCode}
   }
 });
 
-/**
- * Refactoring automatique via Hugging Face Router API
- */
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
 
@@ -185,4 +246,6 @@ app.post('/api/refactor', async (req, res) => {
  */
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
+  console.log(`[SERVER] Supabase backend disponible sur https://mon-saas-backend.onrender.com`);
 });
+
