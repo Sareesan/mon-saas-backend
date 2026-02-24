@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Secure Backend Proxy (Node.js) avec Supabase Users corrigé
+ * CodeVision AI - Backend sécurisé avec Supabase Users
  */
 
 require('dotenv').config();
@@ -24,15 +24,11 @@ app.use(bodyParser.json({ limit: '10mb' }));
 /**
  * Vérification des variables d'environnement
  */
-if (!process.env.GROQ_API_KEY)
-  console.warn('[WARNING] GROQ_API_KEY manquante !');
-else
-  console.log('[INFO] GROQ_API_KEY détectée');
+if (!process.env.GROQ_API_KEY) console.warn('[WARNING] GROQ_API_KEY manquante !');
+else console.log('[INFO] GROQ_API_KEY détectée');
 
-if (!process.env.REFACTORING_API_KEY)
-  console.warn('[WARNING] REFACTORING_API_KEY manquante ! Mode refactor désactivé');
-else
-  console.log('[INFO] REFACTORING_API_KEY détectée');
+if (!process.env.REFACTORING_API_KEY) console.warn('[WARNING] REFACTORING_API_KEY manquante !');
+else console.log('[INFO] REFACTORING_API_KEY détectée');
 
 if (!process.env.DATA_BASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
   console.warn('[WARNING] Supabase non configurée !');
@@ -66,38 +62,45 @@ app.get('/api/health', (req, res) => {
 });
 
 /**
- * 🔹 Routes Supabase - Users corrigées
+ * 🔹 Routes Supabase - Users
  */
 
 // Inscription utilisateur
 app.post('/signup', async (req, res) => {
-  const { email, password } = req.body;
-
+  const { email, password, username } = req.body;
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
 
     // Vérifier si l'utilisateur existe déjà
-    const { data: existingUser } = await supabase
-      .from('users')
+    const { data: existingUsers } = await supabase
+      .from('DATA BASE PROFILES')
       .select('*')
-      .eq('email', normalizedEmail)
-      .single();
+      .eq('email', normalizedEmail);
 
-    if (existingUser) return res.status(400).json({ error: 'Compte déjà existant.' });
+    if (existingUsers && existingUsers.length > 0) {
+      return res.status(400).json({ error: 'Compte déjà existant.' });
+    }
 
     // Hasher le mot de passe
     const hashedPassword = await bcrypt.hash(password, 10);
 
+    // Insérer le nouvel utilisateur
     const { data, error } = await supabase
-      .from('users')
-      .insert([{ email: normalizedEmail, password: hashedPassword }])
+      .from('DATA BASE PROFILES')
+      .insert([{
+        email: normalizedEmail,
+        password: hashedPassword,
+        username: username || null,
+        created_at: new Date()
+      }])
       .select();
 
     if (error) return res.status(400).json({ error: error.message });
 
-    res.json({ message: 'Utilisateur créé avec succès', data });
+    res.json({ message: 'Utilisateur créé avec succès', user: { email: data[0].email, username: data[0].username } });
+
   } catch (err) {
     console.error('[Signup Error]', err.message);
     res.status(500).json({ error: 'Erreur lors de la création de l’utilisateur.' });
@@ -107,24 +110,26 @@ app.post('/signup', async (req, res) => {
 // Connexion utilisateur
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
 
-    const { data, error } = await supabase
-      .from('users')
+    const { data: users } = await supabase
+      .from('DATA BASE PROFILES')
       .select('*')
-      .eq('email', normalizedEmail)
-      .single();
+      .eq('email', normalizedEmail);
 
-    if (error || !data) return res.status(400).json({ error: 'Utilisateur non trouvé.' });
+    if (!users || users.length === 0) {
+      return res.status(400).json({ error: 'Utilisateur non trouvé.' });
+    }
 
-    const match = await bcrypt.compare(password, data.password);
+    const user = users[0];
+    const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
-    res.json({ message: 'Connexion réussie', user: { email: data.email } });
+    res.json({ message: 'Connexion réussie', user: { email: user.email, username: user.username } });
+
   } catch (err) {
     console.error('[Login Error]', err.message);
     res.status(500).json({ error: 'Erreur lors de la connexion.' });
@@ -262,4 +267,5 @@ app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
   console.log(`[SERVER] Supabase backend disponible sur https://mon-saas-backend.onrender.com`);
 });
+
 
