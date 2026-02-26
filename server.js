@@ -123,7 +123,6 @@ app.post('/login', async (req, res) => {
       const expires = new Date(user.premium_expires_at);
       if (expires > now) premiumActive = true;
       else {
-        // Expiré : réinitialiser pass premium et essais gratuits
         await supabase.from('DATA BASE PROFILES')
           .update({
             premium_active: false,
@@ -273,22 +272,33 @@ app.post('/api/refactor', async (req, res) => {
 });
 
 /**
- * 🔹 Webhook PayPal pour activer le pass premium
+ * 🔹 Webhook PayPal pour activer le pass premium (Sandbox)
  */
-app.post('/webhook/paypal', async (req, res) => {
+app.post('/api/paypal/webhook', async (req, res) => {
   const event = req.body;
-
-  // TODO: Vérifier signature webhook PayPal ici pour sécurité
   if (!event.resource) return res.status(400).json({ error: 'Payload invalide' });
 
   const orderID = event.resource.id;
-  const payerEmail = event.resource.payer?.email_address;
-  const amount = event.resource.purchase_units?.[0]?.amount?.value;
-  const user_id = event.resource.custom; // Si tu passes user_id via "custom" dans PayPal
-
-  if (!user_id || !amount || !orderID) return res.status(400).json({ error: 'Données manquantes pour activation premium' });
+  const user_id = event.resource.custom; // user_id envoyé dans "custom"
+  if (!user_id || !orderID) return res.status(400).json({ error: 'Données manquantes' });
 
   try {
+    // Vérifier l’ordre PayPal réel (sandbox)
+    const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
+    const orderResp = await axios.get(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`, {
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    if (orderResp.data.status !== 'COMPLETED') {
+      return res.status(400).json({ error: 'Paiement non confirmé par PayPal' });
+    }
+
+    const payerEmail = orderResp.data.payer?.email_address;
+    const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
+
     // Ajouter paiement
     await supabase.from('DATA BASE PAYMENTS').insert([{
       user_id,
@@ -323,4 +333,5 @@ app.post('/webhook/paypal', async (req, res) => {
 app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
+
 
