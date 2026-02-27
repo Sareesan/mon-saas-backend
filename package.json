@@ -16,9 +16,7 @@
     "morgan": "^1.10.0",
     "bcrypt": "^5.1.1",
     "@supabase/supabase-js": "^2.33.0",
-    "uuid": "^9.0.0"
+    "uuid": "^9.0.0",
+    "jsonwebtoken": "^9.0.0"  // ✅ Ajout pour JWT premium
   }
 }
-
-
-
