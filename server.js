@@ -13,12 +13,12 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// Middleware
+// ================= MIDDLEWARE =================
 app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// Supabase
+// ================= SUPABASE =================
 const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -44,7 +44,7 @@ app.post('/signup', async (req, res) => {
       .select('*')
       .eq('email', normalizedEmail);
 
-    if (existing.length > 0)
+    if (existing && existing.length > 0)
       return res.status(400).json({ error: 'Compte déjà existant' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
@@ -54,7 +54,7 @@ app.post('/signup', async (req, res) => {
       email: normalizedEmail,
       password: hashedPassword,
       username: username || null,
-      created_at: new Date(),
+      created_at: new Date().toISOString(),
       premium_active: false,
       premium_expires_at: null,
       free_trial_conversion: true,
@@ -99,7 +99,6 @@ app.post('/login', async (req, res) => {
     if (!match)
       return res.status(401).json({ error: 'Mot de passe incorrect' });
 
-    // Vérification expiration premium
     let premiumActive = false;
 
     if (user.premium_active && user.premium_expires_at) {
@@ -246,16 +245,33 @@ app.post('/paypal/webhook', async (req, res) => {
     return res.status(400).json({ error: "Données manquantes" });
   }
 
+  const uuidRegex =
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+  if (!uuidRegex.test(user_id)) {
+    return res.status(400).json({ error: "user_id invalide (UUID requis)" });
+  }
+
   try {
+    // Vérifier si déjà payé
+    const { data: existingPayment } = await supabase
+      .from('DATA BASE PAYMENTS')
+      .select('*')
+      .eq('payment_order_id', orderID);
+
+    if (existingPayment && existingPayment.length > 0) {
+      return res.status(200).json({ message: "Paiement déjà traité" });
+    }
+
     // Insert payment
     const { error: paymentError } = await supabase
       .from('DATA BASE PAYMENTS')
       .insert([{
         user_id: user_id,
-        paypal_order_id: orderID,
+        payment_order_id: orderID,
         amount: amount,
         status: "confirmed",
-        created_at: new Date()
+        created_at: new Date().toISOString()
       }]);
 
     if (paymentError) {
@@ -271,7 +287,7 @@ app.post('/paypal/webhook', async (req, res) => {
       .from('DATA BASE PROFILES')
       .update({
         premium_active: true,
-        premium_expires_at: expiresAt,
+        premium_expires_at: expiresAt.toISOString(),
         free_trial_conversion: false,
         free_trial_audit: false,
         free_trial_refactor: false
@@ -287,7 +303,7 @@ app.post('/paypal/webhook', async (req, res) => {
 
     res.status(200).json({
       message: "Premium activé",
-      expires_at: expiresAt
+      expires_at: expiresAt.toISOString()
     });
 
   } catch (err) {
