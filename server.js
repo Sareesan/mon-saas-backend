@@ -50,7 +50,7 @@ const supabase = createClient(
 const PAYPAL_API = 'https://api-m.paypal.com'; // LIVE (pas sandbox)
 const PAYPAL_CLIENT_ID = process.env.PAYPAL_Client_ID;
 const PAYPAL_SECRET = process.env.PAYPAL_Secret;
-const PREMIUM_PRICE = '9.99'; // 🔴 Change ce prix si besoin
+const PREMIUM_PRICE = '7.99'; // 🔴 Change ce prix si besoin
 const PREMIUM_CURRENCY = 'EUR'; // 🔴 Change la devise si besoin
 const PREMIUM_DURATION_DAYS = 30;
 
@@ -598,3 +598,4 @@ app.listen(PORT, () => {
   console.log(`[SERVER] Supabase backend disponible sur https://mon-saas-backend.onrender.com`);
   console.log(`[SERVER] PayPal LIVE activé — Client ID: ${PAYPAL_CLIENT_ID ? '✅ détecté' : '❌ MANQUANT'}`);
 });
+
