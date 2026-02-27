@@ -403,3 +403,4 @@ app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
   console.log(`[SERVER] Supabase backend disponible sur https://mon-saas-backend.onrender.com`);
 });
+
