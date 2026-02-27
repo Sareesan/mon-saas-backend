@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Backend sécurisé avec Supabase Users
+ * CodeVision AI - Secure Backend Proxy (Node.js) avec Supabase Users
  */
 
 require('dotenv').config();
@@ -12,7 +12,6 @@ const morgan = require('morgan');
 const bodyParser = require('body-parser');
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcrypt');
-const { v4: uuidv4 } = require('uuid'); // Génération de user_id
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -25,11 +24,15 @@ app.use(bodyParser.json({ limit: '10mb' }));
 /**
  * Vérification des variables d'environnement
  */
-if (!process.env.GROQ_API_KEY) console.warn('[WARNING] GROQ_API_KEY manquante !');
-else console.log('[INFO] GROQ_API_KEY détectée');
+if (!process.env.GROQ_API_KEY)
+  console.warn('[WARNING] GROQ_API_KEY manquante !');
+else
+  console.log('[INFO] GROQ_API_KEY détectée');
 
-if (!process.env.REFACTORING_API_KEY) console.warn('[WARNING] REFACTORING_API_KEY manquante !');
-else console.log('[INFO] REFACTORING_API_KEY détectée');
+if (!process.env.REFACTORING_API_KEY)
+  console.warn('[WARNING] REFACTORING_API_KEY manquante ! Mode refactor désactivé');
+else
+  console.log('[INFO] REFACTORING_API_KEY détectée');
 
 if (!process.env.DATA_BASE_URL || !process.env.SUPABASE_SERVICE_ROLE_KEY)
   console.warn('[WARNING] Supabase non configurée !');
@@ -68,44 +71,21 @@ app.get('/api/health', (req, res) => {
 
 // Inscription utilisateur
 app.post('/signup', async (req, res) => {
-  const { email, password, username } = req.body;
+  const { email, password } = req.body;
+
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
-    const normalizedEmail = email.trim().toLowerCase();
-
-    // Vérifier si l'utilisateur existe déjà
-    const { data: existingUsers } = await supabase
-      .from('DATA BASE PROFILES')
-      .select('*')
-      .eq('email', normalizedEmail);
-
-    if (existingUsers && existingUsers.length > 0) {
-      return res.status(400).json({ error: 'Compte déjà existant.' });
-    }
-
-    // Hasher le mot de passe
+    // Hasher le mot de passe avant insertion
     const hashedPassword = await bcrypt.hash(password, 10);
 
-    // Générer un user_id unique
-    const newUserId = uuidv4();
-
-    // Insérer le nouvel utilisateur
     const { data, error } = await supabase
-      .from('DATA BASE PROFILES')
-      .insert([{
-        user_id: newUserId,
-        email: normalizedEmail,
-        password: hashedPassword,
-        username: username || null,
-        created_at: new Date()
-      }])
-      .select();
+      .from('users') // Assure-toi d'avoir une table 'users' dans Supabase
+      .insert([{ email, password: hashedPassword }]);
 
     if (error) return res.status(400).json({ error: error.message });
 
-    res.json({ message: 'Utilisateur créé avec succès', user: { email: data[0].email, username: data[0].username, user_id: data[0].user_id } });
-
+    res.json({ message: 'Utilisateur créé avec succès', data });
   } catch (err) {
     console.error('[Signup Error]', err.message);
     res.status(500).json({ error: 'Erreur lors de la création de l’utilisateur.' });
@@ -115,160 +95,25 @@ app.post('/signup', async (req, res) => {
 // Connexion utilisateur
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
+
   if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
-    const normalizedEmail = email.trim().toLowerCase();
-
-    const { data: users } = await supabase
-      .from('DATA BASE PROFILES')
+    const { data, error } = await supabase
+      .from('users')
       .select('*')
-      .eq('email', normalizedEmail);
+      .eq('email', email)
+      .single();
 
-    if (!users || users.length === 0) {
-      return res.status(400).json({ error: 'Utilisateur non trouvé.' });
-    }
+    if (error || !data) return res.status(400).json({ error: 'Utilisateur non trouvé.' });
 
-    const user = users[0];
-    const match = await bcrypt.compare(password, user.password);
+    const match = await bcrypt.compare(password, data.password);
     if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
-    res.json({ message: 'Connexion réussie', user: { email: user.email, username: user.username, user_id: user.user_id } });
-
+    res.json({ message: 'Connexion réussie', user: { email: data.email } });
   } catch (err) {
     console.error('[Login Error]', err.message);
     res.status(500).json({ error: 'Erreur lors de la connexion.' });
-  }
-});
-
-/**
- * 🔹 Routes PayPal - Premium 30 jours
- */
-
-// Créer une commande PayPal
-app.post('/paypal/create-order', async (req, res) => {
-  const { user_id } = req.body;
-
-  if (!user_id || !/^[0-9a-fA-F\-]{36}$/.test(user_id)) {
-    return res.status(400).json({ error: 'user_id invalide' });
-  }
-
-  try {
-    const response = await axios.post(
-      'https://api-m.sandbox.paypal.com/v2/checkout/orders',
-      {
-        intent: 'CAPTURE',
-        purchase_units: [{
-          amount: { currency_code: 'USD', value: '7.99' },
-          custom_id: user_id
-        }]
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.PAYPAL_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const orderID = response.data.id;
-
-    await supabase.from('payments').insert([{
-      paypal_order_id: orderID,
-      user_id,
-      status: 'CREATED',
-      amount: 7.99,
-      created_at: new Date()
-    }]);
-
-    res.json({ orderID });
-  } catch (err) {
-    console.error('[Create Order Error]', err.response?.data || err.message);
-    res.status(500).json({ error: 'Erreur lors de la création de la commande PayPal' });
-  }
-});
-
-// Capturer la commande PayPal et activer premium
-app.post('/paypal/capture-order', async (req, res) => {
-  const { orderID } = req.body;
-
-  if (!orderID) return res.status(400).json({ error: 'orderID requis' });
-
-  try {
-    const captureResponse = await axios.post(
-      `https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}/capture`,
-      {},
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.PAYPAL_ACCESS_TOKEN}`,
-          'Content-Type': 'application/json'
-        }
-      }
-    );
-
-    const captureData = captureResponse.data;
-
-    if (captureData.status !== 'COMPLETED') {
-      return res.status(400).json({ error: 'Paiement non complété' });
-    }
-
-    const user_id = captureData.purchase_units[0].custom_id;
-
-    await supabase.from('payments').insert([{
-      paypal_order_id: orderID,
-      user_id,
-      amount: 7.99,
-      paid_at: new Date()
-    }]);
-
-    const premium_expires_at = new Date();
-    premium_expires_at.setDate(premium_expires_at.getDate() + 30);
-
-    await supabase.from('DATA BASE PROFILES')
-      .update({
-        is_premium: true,
-        premium_expires_at
-      })
-      .eq('user_id', user_id);
-
-    res.json({ success: true, is_premium: true, premium_expires_at });
-  } catch (err) {
-    console.error('[Capture Order Error]', err.response?.data || err.message);
-    res.status(500).json({ error: 'Erreur lors de la capture PayPal' });
-  }
-});
-
-// Vérifier l’état premium réel
-app.get('/api/user/me', async (req, res) => {
-  const { user_id } = req.query;
-
-  if (!user_id || !/^[0-9a-fA-F\-]{36}$/.test(user_id)) {
-    return res.status(400).json({ error: 'user_id invalide' });
-  }
-
-  try {
-    const { data: users } = await supabase
-      .from('DATA BASE PROFILES')
-      .select('is_premium, premium_expires_at')
-      .eq('user_id', user_id)
-      .single();
-
-    if (!users) return res.status(404).json({ error: 'Utilisateur non trouvé' });
-
-    let { is_premium, premium_expires_at } = users;
-
-    if (is_premium && new Date(premium_expires_at) < new Date()) {
-      is_premium = false;
-      premium_expires_at = null;
-      await supabase.from('DATA BASE PROFILES')
-        .update({ is_premium: false, premium_expires_at: null })
-        .eq('user_id', user_id);
-    }
-
-    res.json({ is_premium, premium_expires_at });
-  } catch (err) {
-    console.error('[User Me Error]', err.message);
-    res.status(500).json({ error: 'Erreur lors de la récupération de l’état utilisateur' });
   }
 });
 
@@ -342,7 +187,7 @@ ${sourceCode}
 `;
 
     const response = await axios.post(
-      'https://api/groq.com/openai/v1/chat/completions',
+      'https://api.groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
       { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
@@ -403,4 +248,3 @@ app.listen(PORT, () => {
   console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
   console.log(`[SERVER] Supabase backend disponible sur https://mon-saas-backend.onrender.com`);
 });
-
