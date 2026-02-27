@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Backend complet avec Supabase Users + Pass Premium via PayPal
+ * CodeVision AI - Backend complet avec Supabase Users + IA + PayPal Premium
  */
 
 require('dotenv').config();
@@ -17,65 +17,68 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-// Middleware
+/* =========================
+   MIDDLEWARE
+========================= */
+
 app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// Supabase client
+/* =========================
+   SUPABASE
+========================= */
+
 const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-/**
- * Route racine
- */
+/* =========================
+   ROOT + HEALTH
+========================= */
+
 app.get("/", (req, res) => {
   res.send("Backend OK");
 });
 
-/**
- * Health check
- */
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
-    config: {
-      groq: !!process.env.GROQ_API_KEY,
-      refactoring: !!process.env.REFACTORING_API_KEY,
-      supabase: !!process.env.DATA_BASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY
-    }
+    groq: !!process.env.GROQ_API_KEY,
+    refactoring: !!process.env.REFACTORING_API_KEY,
+    supabase: !!process.env.DATA_BASE_URL
   });
 });
 
-/**
- * 🔹 Routes Utilisateurs
- */
+/* =========================
+   SIGNUP
+========================= */
 
-// Signup
 app.post('/signup', async (req, res) => {
   const { email, password, username } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
+
+  if (!email || !password)
+    return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
 
-    const { data: existingUsers } = await supabase
+    const { data: existing } = await supabase
       .from('DATA BASE PROFILES')
       .select('*')
       .eq('email', normalizedEmail);
 
-    if (existingUsers && existingUsers.length > 0)
+    if (existing && existing.length > 0)
       return res.status(400).json({ error: 'Compte déjà existant.' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUserId = uuidv4();
+    const user_id = uuidv4();
 
     const { data, error } = await supabase
       .from('DATA BASE PROFILES')
       .insert([{
-        user_id: newUserId,
+        user_id,
         email: normalizedEmail,
         password: hashedPassword,
         username: username || null,
@@ -90,17 +93,23 @@ app.post('/signup', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    res.json({ message: 'Utilisateur créé avec succès', user: { email: data[0].email, username: data[0].username, user_id: data[0].user_id } });
+    res.json({ message: "Utilisateur créé", user: data[0] });
+
   } catch (err) {
-    console.error('[Signup Error]', err.message);
-    res.status(500).json({ error: 'Erreur lors de la création de l’utilisateur.' });
+    console.error("[Signup Error]", err.message);
+    res.status(500).json({ error: "Erreur signup." });
   }
 });
 
-// Login
+/* =========================
+   LOGIN
+========================= */
+
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
+
+  if (!email || !password)
+    return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
@@ -110,228 +119,220 @@ app.post('/login', async (req, res) => {
       .select('*')
       .eq('email', normalizedEmail);
 
-    if (!users || users.length === 0) return res.status(400).json({ error: 'Utilisateur non trouvé.' });
+    if (!users || users.length === 0)
+      return res.status(400).json({ error: 'Utilisateur non trouvé.' });
 
     const user = users[0];
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
-    // Vérifier expiration premium
-    let premiumActive = false;
-    if (user.premium_active && user.premium_expires_at) {
-      const now = new Date();
-      const expires = new Date(user.premium_expires_at);
-      if (expires > now) premiumActive = true;
-      else {
-        await supabase.from('DATA BASE PROFILES')
-          .update({
-            premium_active: false,
-            premium_expires_at: null,
-            free_trial_conversion: true,
-            free_trial_audit: true,
-            free_trial_refactor: true
-          })
-          .eq('user_id', user.user_id);
-        premiumActive = false;
-      }
-    }
+    if (!match)
+      return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
-    res.json({
-      message: 'Connexion réussie',
-      user: {
-        email: user.email,
-        username: user.username,
-        user_id: user.user_id,
-        premium_active: premiumActive,
-        free_trial_conversion: user.free_trial_conversion,
-        free_trial_audit: user.free_trial_audit,
-        free_trial_refactor: user.free_trial_refactor
-      }
-    });
+    res.json({ message: "Connexion réussie", user });
+
   } catch (err) {
-    console.error('[Login Error]', err.message);
-    res.status(500).json({ error: 'Erreur lors de la connexion.' });
+    console.error("[Login Error]", err.message);
+    res.status(500).json({ error: "Erreur login." });
   }
 });
 
-/**
- * 🔹 Routes IA (GROQ / Hugging Face)
- */
+/* =========================
+   USER ME
+========================= */
 
-// Audit
+app.get('/api/user/me', async (req, res) => {
+  const { user_id } = req.query;
+
+  if (!user_id)
+    return res.status(400).json({ error: "user_id requis" });
+
+  const { data, error } = await supabase
+    .from('DATA BASE PROFILES')
+    .select('*')
+    .eq('user_id', user_id)
+    .single();
+
+  if (error || !data)
+    return res.status(404).json({ error: "Utilisateur non trouvé" });
+
+  res.json({ user: data });
+});
+
+/* =========================
+   IA - AUDIT (GROQ LLAMA)
+========================= */
+
 app.post('/api/audit', async (req, res) => {
   const { code } = req.body;
-  if (!code) return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
+  if (!code) return res.status(400).json({ error: "Code requis" });
 
   try {
-    const prompt = `
-You are a security and code quality auditor AI.
-Analyze the following code for security vulnerabilities, bad practices, and code quality issues.
-Return ONLY a valid JSON array of findings with these keys:
-- severity (low, medium, high)
-- title
-- description
-- file (if applicable)
-- line (if applicable)
-DO NOT include any explanations or Markdown outside the JSON.
-Code to analyze:
-${code}
-`;
-
     const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
+      "https://api.groq.com/openai/v1/chat/completions",
+      {
+        model: "llama-3.3-70b-versatile",
+        messages: [
+          { role: "system", content: "Analyse le code et retourne un JSON." },
+          { role: "user", content: code }
+        ],
+        temperature: 0.1
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        }
+      }
     );
 
-    let findingsText = response.data.choices[0].message.content.trim();
-    findingsText = findingsText
-      .replace(/^```json\s*/, '')
-      .replace(/```$/g, '')
-      .replace(/^#+\s.*$/gm, '')
-      .trim();
+    res.json({
+      findings: response.data.choices[0].message.content
+    });
 
-    let findings;
-    try {
-      findings = JSON.parse(findingsText);
-    } catch (parseErr) {
-      console.error('[Audit JSON parse failed]', parseErr.message);
-      console.error('[Raw response]', findingsText);
-      return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText });
-    }
-
-    res.json({ findings });
-  } catch (error) {
-    console.error('[Audit Error]', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ error: 'Erreur lors de l’audit du code.' });
+  } catch (err) {
+    console.error("[Audit Error]", err.message);
+    res.status(500).json({ error: "Erreur audit." });
   }
 });
 
-// Convert
+/* =========================
+   IA - CONVERT (GROQ LLAMA)
+========================= */
+
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, fromLanguage, toLanguage } = req.body;
-  if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'API Groq non configurée.' });
-
-  try {
-    const prompt = `
-Convert the following code from ${fromLanguage || 'any language'} 
-to ${toLanguage}.
-Return ONLY the converted code without explanations.
-
-Code:
-${sourceCode}
-`;
-    const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
-      { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
-      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
-    );
-
-    const convertedCode = response.data.choices[0].message.content.trim();
-    res.json({ convertedCode });
-  } catch (error) {
-    console.error('[Groq Convert Error]', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({ error: 'Erreur lors de la conversion via Groq.' });
-  }
-});
-
-// Refactor
-app.post('/api/refactor', async (req, res) => {
-  const { code } = req.body;
-  if (!code) return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
-  if (!process.env.REFACTORING_API_KEY) return res.status(503).json({ error: 'Clé REFACTORING_API_KEY non configurée.' });
 
   try {
     const response = await axios.post(
-      'https://router.huggingface.co/v1/chat/completions',
+      "https://api.groq.com/openai/v1/chat/completions",
       {
-        model: "Qwen/Qwen3-Coder-Next:fastest",
+        model: "llama-3.3-70b-versatile",
         messages: [
-          { role: "system", content: "You are an AI that refactors code. Return cleaned/refactored code only." },
-          { role: "user", content: `Refactor this code:\n${code}` }
+          { role: "system", content: `Convertis de ${fromLanguage} vers ${toLanguage}` },
+          { role: "user", content: sourceCode }
         ]
       },
       {
         headers: {
-          'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          "Content-Type": "application/json"
+        }
       }
     );
 
-    const refactoredCode = response.data?.choices?.[0]?.message?.content || "";
-    res.json({ refactoredCode });
-  } catch (error) {
-    console.error('[Refactor Error]', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: 'Erreur lors du refactoring via Hugging Face.',
-      details: error.response?.data || error.message
+    res.json({
+      convertedCode: response.data.choices[0].message.content
     });
+
+  } catch (err) {
+    console.error("[Convert Error]", err.message);
+    res.status(500).json({ error: "Erreur conversion." });
   }
 });
 
-/**
- * 🔹 Webhook PayPal pour activer le pass premium (Sandbox)
- */
-app.post('/api/paypal/webhook', async (req, res) => {
-  const event = req.body;
-  if (!event.resource) return res.status(400).json({ error: 'Payload invalide' });
+/* =========================
+   IA - REFACTOR (HUGGING FACE)
+========================= */
 
-  const orderID = event.resource.id;
-  const user_id = event.resource.custom; // user_id envoyé dans "custom"
-  if (!user_id || !orderID) return res.status(400).json({ error: 'Données manquantes' });
+app.post('/api/refactor', async (req, res) => {
+  const { code } = req.body;
+  if (!code) return res.status(400).json({ error: "Code requis" });
 
   try {
-    // Vérifier l’ordre PayPal réel (sandbox)
-    const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
-    const orderResp = await axios.get(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`, {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
+    const response = await axios.post(
+      "https://router.huggingface.co/v1/chat/completions",
+      {
+        model: "Qwen/Qwen3-Coder-Next:fastest",
+        messages: [
+          { role: "system", content: "Refactor le code proprement." },
+          { role: "user", content: code }
+        ]
+      },
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.REFACTORING_API_KEY}`,
+          "Content-Type": "application/json"
+        }
       }
+    );
+
+    res.json({
+      refactoredCode: response.data.choices[0].message.content
     });
 
-    if (orderResp.data.status !== 'COMPLETED') {
-      return res.status(400).json({ error: 'Paiement non confirmé par PayPal' });
-    }
+  } catch (err) {
+    console.error("[Refactor Error]", err.message);
+    res.status(500).json({ error: "Erreur refactor." });
+  }
+});
 
-    const payerEmail = orderResp.data.payer?.email_address;
-    const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
+/* =========================
+   PAYPAL WEBHOOK
+========================= */
 
-    // Ajouter paiement
+app.post('/paypal/webhook', async (req, res) => {
+  try {
+    const { orderID } = req.body;
+    if (!orderID)
+      return res.status(400).json({ error: "orderID requis" });
+
+    const auth = Buffer.from(
+      `${process.env.Client_ID}:${process.env.Secret}`
+    ).toString('base64');
+
+    const orderResp = await axios.get(
+      `https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`,
+      {
+        headers: {
+          Authorization: `Basic ${auth}`,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+
+    if (orderResp.data.status !== "COMPLETED")
+      return res.status(400).json({ error: "Paiement non confirmé" });
+
+    const user_id =
+      orderResp.data.purchase_units?.[0]?.custom_id;
+
+    const amount =
+      orderResp.data.purchase_units?.[0]?.amount?.value;
+
+    if (!user_id)
+      return res.status(400).json({ error: "custom_id manquant" });
+
     await supabase.from('DATA BASE PAYMENTS').insert([{
       user_id,
       paypal_order_id: orderID,
       amount,
-      status: 'confirmed',
+      status: "confirmed",
       created_at: new Date()
     }]);
 
-    // Activer pass premium 30 jours
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
-    await supabase.from('DATA BASE PROFILES').update({
-      premium_active: true,
-      premium_expires_at: expiresAt,
-      free_trial_conversion: false,
-      free_trial_audit: false,
-      free_trial_refactor: false
-    }).eq('user_id', user_id);
+    await supabase.from('DATA BASE PROFILES')
+      .update({
+        premium_active: true,
+        premium_expires_at: expiresAt,
+        free_trial_conversion: false,
+        free_trial_audit: false,
+        free_trial_refactor: false
+      })
+      .eq('user_id', user_id);
 
-    res.status(200).json({ message: 'Pass premium activé', expires_at: expiresAt });
+    res.json({ message: "Premium activé", expiresAt });
+
   } catch (err) {
-    console.error('[PayPal Webhook]', err.message);
-    res.status(500).json({ error: 'Impossible d’activer le pass premium' });
+    console.error("[PAYPAL ERROR]", err.message);
+    res.status(500).json({ error: "Erreur PayPal." });
   }
 });
 
-/**
- * Démarrage serveur
- */
+/* ========================= */
+
 app.listen(PORT, () => {
-  console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
+  console.log(`Server démarré sur http://localhost:${PORT}`);
 });
-
-
