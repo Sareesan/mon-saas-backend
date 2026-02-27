@@ -8,7 +8,7 @@ const morgan = require('morgan');
 const bodyParser = require('body-parser');
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcrypt');
-const { v4: uuidv4, validate: uuidValidate } = require('uuid');
+const { v4: uuidv4 } = require('uuid');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -18,7 +18,7 @@ app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// Supabase
+// Supabase client
 const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -55,7 +55,7 @@ app.post('/signup', async (req, res) => {
       password: hashedPassword,
       username: username || null,
       created_at: new Date(),
-      premium_active: false,
+      is_premium: false,
       premium_expires_at: null,
       free_conversion_used: true,
       free_audit_used: true,
@@ -99,9 +99,10 @@ app.post('/login', async (req, res) => {
     if (!match)
       return res.status(401).json({ error: 'Mot de passe incorrect' });
 
+    // Vérification expiration premium
     let premiumActive = false;
 
-    if (user.premium_active && user.premium_expires_at) {
+    if (user.is_premium && user.premium_expires_at) {
       const now = new Date();
       const expires = new Date(user.premium_expires_at);
 
@@ -111,7 +112,7 @@ app.post('/login', async (req, res) => {
         await supabase
           .from('DATA BASE PROFILES')
           .update({
-            premium_active: false,
+            is_premium: false,
             premium_expires_at: null,
             free_conversion_used: true,
             free_audit_used: true,
@@ -127,7 +128,7 @@ app.post('/login', async (req, res) => {
         user_id: user.user_id,
         email: user.email,
         username: user.username,
-        premium_active: premiumActive,
+        is_premium: premiumActive,
         free_conversion_used: user.free_conversion_used,
         free_audit_used: user.free_audit_used,
         free_refactor_used: user.free_refactor_used
@@ -241,15 +242,16 @@ app.post('/paypal/webhook', async (req, res) => {
 
   console.log("Webhook reçu:", req.body);
 
-  if (!orderID || !user_id || !amount) {
-    return res.status(400).json({ error: "Données manquantes" });
-  }
-
-  if (!uuidValidate(user_id)) {
+  // Vérification UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+  if (!uuidRegex.test(user_id)) {
     console.log("UUID INVALID", user_id);
     return res.status(400).json({ error: "user_id invalide" });
-  } else {
-    console.log("UUID OK", user_id);
+  }
+  console.log("UUID OK", user_id);
+
+  if (!orderID || !user_id || !amount) {
+    return res.status(400).json({ error: "Données manquantes" });
   }
 
   try {
@@ -270,14 +272,14 @@ app.post('/paypal/webhook', async (req, res) => {
     }
 
     // Activate premium
-    const premiumExpiresAt = new Date();
-    premiumExpiresAt.setDate(premiumExpiresAt.getDate() + 30);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
 
     const { error: profileError } = await supabase
       .from('DATA BASE PROFILES')
       .update({
-        premium_active: true,
-        premium_expires_at: premiumExpiresAt,
+        is_premium: true,
+        premium_expires_at: expiresAt,
         free_audit_used: false,
         free_conversion_used: false,
         free_refactor_used: false
@@ -293,7 +295,7 @@ app.post('/paypal/webhook', async (req, res) => {
 
     res.status(200).json({
       message: "Premium activé",
-      expires_at: premiumExpiresAt
+      expires_at: expiresAt
     });
 
   } catch (err) {
@@ -302,7 +304,7 @@ app.post('/paypal/webhook', async (req, res) => {
   }
 });
 
-// ================= START =================
+// ================= START SERVER =================
 app.listen(PORT, () => {
   console.log(`Serveur démarré sur port ${PORT}`);
 });
