@@ -13,12 +13,12 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
-// ================= MIDDLEWARE =================
+// Middleware
 app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// ================= SUPABASE =================
+// Supabase
 const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -32,7 +32,6 @@ app.get("/", (req, res) => {
 // ================= SIGNUP =================
 app.post('/signup', async (req, res) => {
   const { email, password, username } = req.body;
-
   if (!email || !password)
     return res.status(400).json({ error: 'Email et mot de passe requis' });
 
@@ -44,17 +43,18 @@ app.post('/signup', async (req, res) => {
       .select('*')
       .eq('email', normalizedEmail);
 
-    if (existing && existing.length > 0)
+    if (existing.length > 0)
       return res.status(400).json({ error: 'Compte déjà existant' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
+    const newUserId = uuidv4();
 
     const newUser = {
-      user_id: uuidv4(),
+      user_id: newUserId,
       email: normalizedEmail,
       password: hashedPassword,
       username: username || null,
-      created_at: new Date().toISOString(),
+      created_at: new Date(),
       premium_active: false,
       premium_expires_at: null,
       free_trial_conversion: true,
@@ -83,7 +83,6 @@ app.post('/signup', async (req, res) => {
 // ================= LOGIN =================
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
   try {
     const { data: users } = await supabase
       .from('DATA BASE PROFILES')
@@ -95,19 +94,14 @@ app.post('/login', async (req, res) => {
 
     const user = users[0];
     const match = await bcrypt.compare(password, user.password);
-
-    if (!match)
-      return res.status(401).json({ error: 'Mot de passe incorrect' });
+    if (!match) return res.status(401).json({ error: 'Mot de passe incorrect' });
 
     let premiumActive = false;
-
     if (user.premium_active && user.premium_expires_at) {
       const now = new Date();
       const expires = new Date(user.premium_expires_at);
-
-      if (expires > now) {
-        premiumActive = true;
-      } else {
+      if (expires > now) premiumActive = true;
+      else {
         await supabase
           .from('DATA BASE PROFILES')
           .update({
@@ -143,28 +137,17 @@ app.post('/login', async (req, res) => {
 // ================= CONVERT (GROQ) =================
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, toLanguage } = req.body;
-
   try {
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
         model: "llama-3.3-70b-versatile",
-        messages: [{
-          role: "user",
-          content: `Convert this code to ${toLanguage}:\n${sourceCode}`
-        }]
+        messages: [{ role: "user", content: `Convert this code to ${toLanguage}:\n${sourceCode}` }]
       },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
     );
 
-    res.json({
-      convertedCode: response.data.choices[0].message.content
-    });
+    res.json({ convertedCode: response.data.choices[0].message.content });
 
   } catch (err) {
     console.error('[GROQ ERROR]', err.response?.data || err.message);
@@ -175,28 +158,17 @@ app.post('/api/convert', async (req, res) => {
 // ================= AUDIT (GROQ) =================
 app.post('/api/audit', async (req, res) => {
   const { code } = req.body;
-
   try {
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
         model: "llama-3.3-70b-versatile",
-        messages: [{
-          role: "user",
-          content: `Audit this code and return JSON findings only:\n${code}`
-        }]
+        messages: [{ role: "user", content: `Audit this code and return JSON findings only:\n${code}` }]
       },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
     );
 
-    res.json({
-      findings: response.data.choices[0].message.content
-    });
+    res.json({ findings: response.data.choices[0].message.content });
 
   } catch (err) {
     console.error('[AUDIT ERROR]', err.response?.data || err.message);
@@ -207,27 +179,17 @@ app.post('/api/audit', async (req, res) => {
 // ================= REFACTOR (HUGGING FACE) =================
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
-
   try {
     const response = await axios.post(
       'https://router.huggingface.co/v1/chat/completions',
       {
         model: "Qwen/Qwen3-Coder-Next:fastest",
-        messages: [
-          { role: "user", content: `Refactor this code:\n${code}` }
-        ]
+        messages: [{ role: "user", content: `Refactor this code:\n${code}` }]
       },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.REFACTORING_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-      }
+      { headers: { Authorization: `Bearer ${process.env.REFACTORING_API_KEY}`, 'Content-Type': 'application/json' } }
     );
 
-    res.json({
-      refactoredCode: response.data.choices[0].message.content
-    });
+    res.json({ refactoredCode: response.data.choices[0].message.content });
 
   } catch (err) {
     console.error('[REFACTOR ERROR]', err.response?.data || err.message);
@@ -238,40 +200,29 @@ app.post('/api/refactor', async (req, res) => {
 // ================= PAYPAL WEBHOOK =================
 app.post('/paypal/webhook', async (req, res) => {
   const { orderID, user_id, amount } = req.body;
-
   console.log("Webhook reçu:", req.body);
 
-  if (!orderID || !user_id || !amount) {
+  if (!orderID || !user_id || !amount)
     return res.status(400).json({ error: "Données manquantes" });
-  }
 
-  const uuidRegex =
-    /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-
+  // Vérifier que user_id est bien un UUID
+  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
   if (!uuidRegex.test(user_id)) {
-    return res.status(400).json({ error: "user_id invalide (UUID requis)" });
+    console.log("UUID INVALID", user_id);
+    return res.status(400).json({ error: "Invalid user id" });
   }
+  console.log("UUID OK", user_id);
 
   try {
-    // Vérifier si déjà payé
-    const { data: existingPayment } = await supabase
-      .from('DATA BASE PAYMENTS')
-      .select('*')
-      .eq('payment_order_id', orderID);
-
-    if (existingPayment && existingPayment.length > 0) {
-      return res.status(200).json({ message: "Paiement déjà traité" });
-    }
-
     // Insert payment
     const { error: paymentError } = await supabase
       .from('DATA BASE PAYMENTS')
       .insert([{
-        user_id: user_id,
-        payment_order_id: orderID,
-        amount: amount,
+        user_id,
+        paypal_order_id: orderID,
+        amount,
         status: "confirmed",
-        created_at: new Date().toISOString()
+        created_at: new Date()
       }]);
 
     if (paymentError) {
@@ -279,7 +230,7 @@ app.post('/paypal/webhook', async (req, res) => {
       return res.status(500).json({ error: paymentError.message });
     }
 
-    // Activate premium
+    // Activer premium
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
@@ -287,7 +238,7 @@ app.post('/paypal/webhook', async (req, res) => {
       .from('DATA BASE PROFILES')
       .update({
         premium_active: true,
-        premium_expires_at: expiresAt.toISOString(),
+        premium_expires_at: expiresAt,
         free_trial_conversion: false,
         free_trial_audit: false,
         free_trial_refactor: false
@@ -301,10 +252,7 @@ app.post('/paypal/webhook', async (req, res) => {
 
     console.log("Premium activé pour:", user_id);
 
-    res.status(200).json({
-      message: "Premium activé",
-      expires_at: expiresAt.toISOString()
-    });
+    res.status(200).json({ message: "Premium activé", expires_at: expiresAt });
 
   } catch (err) {
     console.error('[PAYPAL FATAL]', err);
