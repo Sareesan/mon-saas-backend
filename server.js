@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Backend complet avec Supabase Users + Pass Premium via PayPal
+ * CodeVision AI - Backend complet avec Supabase Users + Pass Premium via PayPal (Sandbox simplifié)
  */
 
 require('dotenv').config();
@@ -60,7 +60,6 @@ app.post('/signup', async (req, res) => {
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
-
     const { data: existingUsers } = await supabase
       .from('DATA BASE PROFILES')
       .select('*')
@@ -104,7 +103,6 @@ app.post('/login', async (req, res) => {
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
-
     const { data: users } = await supabase
       .from('DATA BASE PROFILES')
       .select('*')
@@ -116,7 +114,6 @@ app.post('/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
-    // Vérifier expiration premium
     let premiumActive = false;
     if (user.premium_active && user.premium_expires_at) {
       const now = new Date();
@@ -155,7 +152,7 @@ app.post('/login', async (req, res) => {
 });
 
 /**
- * 🔹 Routes IA (GROQ / Hugging Face / Llama)
+ * 🔹 Routes IA (GROQ / Hugging Face)
  */
 
 // Audit
@@ -177,7 +174,6 @@ DO NOT include any explanations or Markdown outside the JSON.
 Code to analyze:
 ${code}
 `;
-
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
@@ -185,20 +181,11 @@ ${code}
     );
 
     let findingsText = response.data.choices[0].message.content.trim();
-    findingsText = findingsText
-      .replace(/^```json\s*/, '')
-      .replace(/```$/g, '')
-      .replace(/^#+\s.*$/gm, '')
-      .trim();
+    findingsText = findingsText.replace(/^```json\s*/, '').replace(/```$/g, '').replace(/^#+\s.*$/gm, '').trim();
 
     let findings;
-    try {
-      findings = JSON.parse(findingsText);
-    } catch (parseErr) {
-      console.error('[Audit JSON parse failed]', parseErr.message);
-      console.error('[Raw response]', findingsText);
-      return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText });
-    }
+    try { findings = JSON.parse(findingsText); } 
+    catch (parseErr) { return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText }); }
 
     res.json({ findings });
   } catch (error) {
@@ -226,9 +213,7 @@ ${sourceCode}
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
       { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
-
-    const convertedCode = response.data.choices[0].message.content.trim();
-    res.json({ convertedCode });
+    res.json({ convertedCode: response.data.choices[0].message.content.trim() });
   } catch (error) {
     console.error('[Groq Convert Error]', error.response?.data || error.message);
     res.status(error.response?.status || 500).json({ error: 'Erreur lors de la conversion via Groq.' });
@@ -244,84 +229,48 @@ app.post('/api/refactor', async (req, res) => {
   try {
     const response = await axios.post(
       'https://router.huggingface.co/v1/chat/completions',
-      {
-        model: "Qwen/Qwen3-Coder-Next:fastest",
-        messages: [
-          { role: "system", content: "You are an AI that refactors code. Return cleaned/refactored code only." },
-          { role: "user", content: `Refactor this code:\n${code}` }
-        ]
-      },
-      {
-        headers: {
-          'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
-          'Content-Type': 'application/json'
-        },
-        timeout: 60000
-      }
+      { model: "Qwen/Qwen3-Coder-Next:fastest", messages: [
+        { role: "system", content: "You are an AI that refactors code. Return cleaned/refactored code only." },
+        { role: "user", content: `Refactor this code:\n${code}` }
+      ]},
+      { headers: { 'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 60000 }
     );
 
-    const refactoredCode = response.data?.choices?.[0]?.message?.content || "";
-    res.json({ refactoredCode });
+    res.json({ refactoredCode: response.data?.choices?.[0]?.message?.content || "" });
   } catch (error) {
     console.error('[Refactor Error]', error.response?.data || error.message);
-    res.status(error.response?.status || 500).json({
-      error: 'Erreur lors du refactoring via Hugging Face.',
-      details: error.response?.data || error.message
-    });
+    res.status(error.response?.status || 500).json({ error: 'Erreur lors du refactoring via Hugging Face.', details: error.response?.data || error.message });
   }
 });
 
 /**
- * 🔹 Webhook PayPal pour activer le pass premium
+ * 🔹 Webhook PayPal simplifié (sandbox)
  */
 app.post('/paypal/webhook', async (req, res) => {
-  const event = req.body;
-  if (!event.resource) return res.status(400).json({ error: 'Payload invalide' });
-
-  const orderID = event.resource.id;
-  const user_id = event.resource.custom; // user_id envoyé dans "custom"
-  if (!user_id || !orderID) return res.status(400).json({ error: 'Données manquantes' });
+  const { orderID, user_id, amount } = req.body;
+  if (!orderID || !user_id) return res.status(400).json({ error: 'Données manquantes' });
 
   try {
-    // Vérifier l’ordre PayPal sandbox/live
-    const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
-    const orderResp = await axios.get(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`, {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (orderResp.data.status !== 'COMPLETED') {
-      return res.status(400).json({ error: 'Paiement non confirmé par PayPal' });
-    }
-
-    const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
-
-    // Ajouter paiement
-    await supabase.from('DATA BASE PAYMENTS').insert([{
+    // Enregistrer le paiement
+    await supabase.from('payments').insert([{
       user_id,
       paypal_order_id: orderID,
-      amount,
+      amount: amount || 0,
       status: 'confirmed',
       created_at: new Date()
     }]);
 
     // Activer pass premium 30 jours
-    const expires = new Date();
-    expires.setDate(expires.getDate() + 30);
-
-    await supabase.from('DATA BASE PROFILES').update({
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
+    await supabase.from('profiles').update({
       premium_active: true,
-      premium_expires_at: expires,
-      free_trial_conversion: false,
-      free_trial_audit: false,
-      free_trial_refactor: false
+      premium_expires_at: expiresAt
     }).eq('user_id', user_id);
 
-    res.status(200).json({ message: 'Pass premium activé', premium_expires_at: expires });
+    res.status(200).json({ message: 'Pass premium activé', expires_at: expiresAt });
   } catch (err) {
-    console.error('[PAYPAL ERROR]', err.response?.data || err.message);
+    console.error('[PayPal Webhook]', err.message);
     res.status(500).json({ error: 'Impossible d’activer le pass premium' });
   }
 });
