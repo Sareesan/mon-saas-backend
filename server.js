@@ -155,7 +155,7 @@ app.post('/login', async (req, res) => {
 });
 
 /**
- * 🔹 Routes IA (GROQ / Hugging Face / Llama)
+ * 🔹 Routes IA (GROQ / Hugging Face)
  */
 
 // Audit
@@ -272,33 +272,16 @@ app.post('/api/refactor', async (req, res) => {
 });
 
 /**
- * 🔹 Webhook PayPal pour activer le pass premium
+ * 🔹 Webhook PayPal simplifié
+ * Capture déjà effectué côté frontend, backend reçoit orderID, user_id, amount
  */
 app.post('/paypal/webhook', async (req, res) => {
-  const event = req.body;
-  if (!event.resource) return res.status(400).json({ error: 'Payload invalide' });
+  const { orderID, user_id, amount } = req.body;
 
-  const orderID = event.resource.id;
-  const user_id = event.resource.custom; // user_id envoyé dans "custom"
-  if (!user_id || !orderID) return res.status(400).json({ error: 'Données manquantes' });
+  if (!orderID || !user_id || !amount) return res.status(400).json({ error: 'Données manquantes pour activation premium' });
 
   try {
-    // Vérifier l’ordre PayPal sandbox/live
-    const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
-    const orderResp = await axios.get(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`, {
-      headers: {
-        'Authorization': `Basic ${auth}`,
-        'Content-Type': 'application/json'
-      }
-    });
-
-    if (orderResp.data.status !== 'COMPLETED') {
-      return res.status(400).json({ error: 'Paiement non confirmé par PayPal' });
-    }
-
-    const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
-
-    // Ajouter paiement
+    // Ajouter paiement dans Supabase
     await supabase.from('DATA BASE PAYMENTS').insert([{
       user_id,
       paypal_order_id: orderID,
@@ -308,20 +291,20 @@ app.post('/paypal/webhook', async (req, res) => {
     }]);
 
     // Activer pass premium 30 jours
-    const expires = new Date();
-    expires.setDate(expires.getDate() + 30);
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 30);
 
     await supabase.from('DATA BASE PROFILES').update({
       premium_active: true,
-      premium_expires_at: expires,
+      premium_expires_at: expiresAt,
       free_trial_conversion: false,
       free_trial_audit: false,
       free_trial_refactor: false
     }).eq('user_id', user_id);
 
-    res.status(200).json({ message: 'Pass premium activé', premium_expires_at: expires });
+    res.status(200).json({ message: 'Pass premium activé', premium_expires_at: expiresAt });
   } catch (err) {
-    console.error('[PAYPAL ERROR]', err.response?.data || err.message);
+    console.error('[PayPal Webhook]', err.message);
     res.status(500).json({ error: 'Impossible d’activer le pass premium' });
   }
 });
