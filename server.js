@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Backend complet avec Supabase Users + IA + PayPal
+ * CodeVision AI - Backend complet avec Supabase Users + Pass Premium via PayPal
  */
 
 require('dotenv').config();
@@ -28,25 +28,35 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-// Root
+/**
+ * Route racine
+ */
 app.get("/", (req, res) => {
   res.send("Backend OK");
 });
 
-// Health
+/**
+ * Health check
+ */
 app.get('/api/health', (req, res) => {
   res.json({
-    status: 'ok'
+    status: 'ok',
+    config: {
+      groq: !!process.env.GROQ_API_KEY,
+      refactoring: !!process.env.REFACTORING_API_KEY,
+      supabase: !!process.env.DATA_BASE_URL && !!process.env.SUPABASE_SERVICE_ROLE_KEY
+    }
   });
 });
 
-/* =========================
-   SIGNUP
-========================= */
+/**
+ * 🔹 Routes Utilisateurs
+ */
+
+// Signup
 app.post('/signup', async (req, res) => {
   const { email, password, username } = req.body;
-  if (!email || !password)
-    return res.status(400).json({ error: 'Email et mot de passe requis.' });
+  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
@@ -80,22 +90,17 @@ app.post('/signup', async (req, res) => {
 
     if (error) return res.status(400).json({ error: error.message });
 
-    res.json({ message: "Utilisateur créé", user: data[0] });
-
+    res.json({ message: 'Utilisateur créé avec succès', user: { email: data[0].email, username: data[0].username, user_id: data[0].user_id } });
   } catch (err) {
-    console.error("[Signup Error]", err.message);
-    res.status(500).json({ error: "Erreur signup." });
+    console.error('[Signup Error]', err.message);
+    res.status(500).json({ error: 'Erreur lors de la création de l’utilisateur.' });
   }
 });
 
-/* =========================
-   LOGIN
-========================= */
+// Login
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
-
-  if (!email || !password)
-    return res.status(400).json({ error: 'Email et mot de passe requis.' });
+  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
@@ -105,214 +110,227 @@ app.post('/login', async (req, res) => {
       .select('*')
       .eq('email', normalizedEmail);
 
-    if (!users || users.length === 0)
-      return res.status(400).json({ error: 'Utilisateur non trouvé.' });
+    if (!users || users.length === 0) return res.status(400).json({ error: 'Utilisateur non trouvé.' });
 
     const user = users[0];
     const match = await bcrypt.compare(password, user.password);
+    if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
-    if (!match)
-      return res.status(401).json({ error: 'Mot de passe incorrect.' });
+    let premiumActive = false;
+    if (user.premium_active && user.premium_expires_at) {
+      const now = new Date();
+      const expires = new Date(user.premium_expires_at);
+      if (expires > now) premiumActive = true;
+      else {
+        await supabase.from('DATA BASE PROFILES')
+          .update({
+            premium_active: false,
+            premium_expires_at: null,
+            free_trial_conversion: true,
+            free_trial_audit: true,
+            free_trial_refactor: true
+          })
+          .eq('user_id', user.user_id);
+        premiumActive = false;
+      }
+    }
 
-    res.json({ message: "Connexion réussie", user });
-
+    res.json({
+      message: 'Connexion réussie',
+      user: {
+        email: user.email,
+        username: user.username,
+        user_id: user.user_id,
+        premium_active: premiumActive,
+        free_trial_conversion: user.free_trial_conversion,
+        free_trial_audit: user.free_trial_audit,
+        free_trial_refactor: user.free_trial_refactor
+      }
+    });
   } catch (err) {
-    console.error("[Login Error]", err.message);
-    res.status(500).json({ error: "Erreur login." });
+    console.error('[Login Error]', err.message);
+    res.status(500).json({ error: 'Erreur lors de la connexion.' });
   }
 });
 
-/* =========================
-   USER ME
-========================= */
-app.get('/api/user/me', async (req, res) => {
-  const { user_id } = req.query;
-  if (!user_id) return res.status(400).json({ error: "user_id requis" });
+/**
+ * 🔹 Routes IA (GROQ / Hugging Face)
+ */
 
-  const { data, error } = await supabase
-    .from('DATA BASE PROFILES')
-    .select('*')
-    .eq('user_id', user_id)
-    .single();
-
-  if (error || !data)
-    return res.status(404).json({ error: "Utilisateur non trouvé" });
-
-  res.json({ user: data });
-});
-
-/* =========================
-   IA - AUDIT
-========================= */
+// Audit
 app.post('/api/audit', async (req, res) => {
   const { code } = req.body;
-  if (!code) return res.status(400).json({ error: "Code requis" });
+  if (!code) return res.status(400).json({ error: 'Code obligatoire pour l’audit' });
 
   try {
     const prompt = `
-You are a security and code auditor AI.
+You are a security and code quality auditor AI.
 Analyze the following code for security vulnerabilities, bad practices, and code quality issues.
-Return a valid JSON array of findings.
-Code:
+Return ONLY a valid JSON array of findings with these keys:
+- severity (low, medium, high)
+- title
+- description
+- file (if applicable)
+- line (if applicable)
+DO NOT include any explanations or Markdown outside the JSON.
+Code to analyze:
 ${code}
 `;
 
     const response = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "system", content: prompt }],
-        temperature: 0.1
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
+      'https://api.groq.com/openai/v1/chat/completions',
+      { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
-    res.json({ findings: response.data.choices[0].message.content });
+    let findingsText = response.data.choices[0].message.content.trim();
+    findingsText = findingsText
+      .replace(/^```json\s*/, '')
+      .replace(/```$/g, '')
+      .replace(/^#+\s.*$/gm, '')
+      .trim();
 
-  } catch (err) {
-    console.error("[Audit Error]", err.message);
-    res.status(500).json({ error: "Erreur audit." });
+    let findings;
+    try {
+      findings = JSON.parse(findingsText);
+    } catch (parseErr) {
+      console.error('[Audit JSON parse failed]', parseErr.message);
+      console.error('[Raw response]', findingsText);
+      return res.status(500).json({ error: 'Impossible de parser la réponse de l’audit', raw: findingsText });
+    }
+
+    res.json({ findings });
+  } catch (error) {
+    console.error('[Audit Error]', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({ error: 'Erreur lors de l’audit du code.' });
   }
 });
 
-/* =========================
-   IA - CONVERT
-========================= */
+// Convert
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, fromLanguage, toLanguage } = req.body;
+  if (!process.env.GROQ_API_KEY) return res.status(503).json({ error: 'API Groq non configurée.' });
 
   try {
     const prompt = `
-Convert the following code from ${fromLanguage} to ${toLanguage}.
-Return code only.
+Convert the following code from ${fromLanguage || 'any language'} 
+to ${toLanguage}.
+Return ONLY the converted code without explanations.
+
 Code:
 ${sourceCode}
 `;
-
     const response = await axios.post(
-      "https://api.groq.com/openai/v1/chat/completions",
-      {
-        model: "llama-3.3-70b-versatile",
-        messages: [{ role: "system", content: prompt }]
-      },
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
-          "Content-Type": "application/json"
-        }
-      }
+      'https://api.groq.com/openai/v1/chat/completions',
+      { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
+      { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
 
-    res.json({ convertedCode: response.data.choices[0].message.content });
-
-  } catch (err) {
-    console.error("[Convert Error]", err.message);
-    res.status(500).json({ error: "Erreur conversion." });
+    const convertedCode = response.data.choices[0].message.content.trim();
+    res.json({ convertedCode });
+  } catch (error) {
+    console.error('[Groq Convert Error]', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({ error: 'Erreur lors de la conversion via Groq.' });
   }
 });
 
-/* =========================
-   IA - REFACTOR
-========================= */
+// Refactor
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
-  if (!code) return res.status(400).json({ error: "Code requis" });
+  if (!code) return res.status(400).json({ error: 'Code obligatoire pour le refactoring.' });
+  if (!process.env.REFACTORING_API_KEY) return res.status(503).json({ error: 'Clé REFACTORING_API_KEY non configurée.' });
 
   try {
     const response = await axios.post(
-      "https://router.huggingface.co/v1/chat/completions",
+      'https://router.huggingface.co/v1/chat/completions',
       {
         model: "Qwen/Qwen3-Coder-Next:fastest",
         messages: [
-          { role: "system", content: "Refactor code only." },
-          { role: "user", content: code }
+          { role: "system", content: "You are an AI that refactors code. Return cleaned/refactored code only." },
+          { role: "user", content: `Refactor this code:\n${code}` }
         ]
       },
       {
         headers: {
-          Authorization: `Bearer ${process.env.REFACTORING_API_KEY}`,
-          "Content-Type": "application/json"
-        }
+          'Authorization': `Bearer ${process.env.REFACTORING_API_KEY}`,
+          'Content-Type': 'application/json'
+        },
+        timeout: 60000
       }
     );
 
-    res.json({
-      refactoredCode: response.data.choices[0].message.content
+    const refactoredCode = response.data?.choices?.[0]?.message?.content || "";
+    res.json({ refactoredCode });
+  } catch (error) {
+    console.error('[Refactor Error]', error.response?.data || error.message);
+    res.status(error.response?.status || 500).json({
+      error: 'Erreur lors du refactoring via Hugging Face.',
+      details: error.response?.data || error.message
     });
-
-  } catch (err) {
-    console.error("[Refactor Error]", err.message);
-    res.status(500).json({ error: "Erreur refactor." });
   }
 });
 
-/* =========================
-   PAYPAL WEBHOOK
-========================= */
+/**
+ * 🔹 Webhook PayPal pour activer le pass premium
+ */
 app.post('/paypal/webhook', async (req, res) => {
+  const event = req.body;
+  if (!event.resource) return res.status(400).json({ error: 'Payload invalide' });
+
+  const orderID = event.resource.id;
+  const user_id = event.resource.custom; // user_id envoyé dans "custom"
+  if (!user_id || !orderID) return res.status(400).json({ error: 'Données manquantes' });
+
   try {
-    const { orderID } = req.body;
-
-    if (!orderID)
-      return res.status(400).json({ error: "orderID requis" });
-
-    // appel PayPal orders endpoint
+    // Auth PayPal
     const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
-    const orderResp = await axios.get(
-      `https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`,
-      {
-        headers: {
-          Authorization: `Basic ${auth}`,
-          "Content-Type": "application/json"
-        }
+
+    // Récupérer l’ordre
+    const orderResp = await axios.get(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`, {
+      headers: {
+        'Authorization': `Basic ${auth}`,
+        'Content-Type': 'application/json'
       }
-    );
+    });
 
-    if (orderResp.data.status !== "COMPLETED")
-      return res.status(400).json({ error: "Paiement non confirmé" });
+    if (orderResp.data.status !== 'COMPLETED') {
+      return res.status(400).json({ error: 'Paiement non confirmé par PayPal' });
+    }
 
-    const user_id = orderResp.data.purchase_units?.[0]?.custom_id;
+    const payerEmail = orderResp.data.payer?.email_address;
     const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
 
-    if (!user_id)
-      return res.status(400).json({ error: "custom_id manquant" });
-
+    // Ajouter paiement
     await supabase.from('DATA BASE PAYMENTS').insert([{
       user_id,
       paypal_order_id: orderID,
       amount,
-      status: "confirmed",
+      status: 'confirmed',
       created_at: new Date()
     }]);
 
+    // Activer pass premium 30 jours
     const expiresAt = new Date();
     expiresAt.setDate(expiresAt.getDate() + 30);
 
-    await supabase.from('DATA BASE PROFILES')
-      .update({
-        premium_active: true,
-        premium_expires_at: expiresAt,
-        free_trial_conversion: false,
-        free_trial_audit: false,
-        free_trial_refactor: false
-      })
-      .eq('user_id', user_id);
+    await supabase.from('DATA BASE PROFILES').update({
+      premium_active: true,
+      premium_expires_at: expiresAt,
+      free_trial_conversion: false,
+      free_trial_audit: false,
+      free_trial_refactor: false
+    }).eq('user_id', user_id);
 
-    res.json({ message: "Premium activé", expiresAt });
-
+    res.status(200).json({ message: 'Pass premium activé', premium_expires_at: expiresAt });
   } catch (err) {
-    console.error("[PAYPAL ERROR]", err.response?.data || err.message);
-    res.status(500).json({ error: "Erreur PayPal." });
+    console.error('[PAYPAL ERROR]', err.response?.data || err.message);
+    res.status(500).json({ error: 'Impossible d’activer le pass premium' });
   }
 });
 
-/* ========================= */  
+/**
+ * Démarrage serveur
+ */
 app.listen(PORT, () => {
-  console.log(`Server démarré sur http://localhost:${PORT}`);
+  console.log(`[SERVER] CodeVision AI démarré sur http://localhost:${PORT}`);
 });
-
