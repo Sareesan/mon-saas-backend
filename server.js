@@ -13,7 +13,6 @@ const bodyParser = require('body-parser');
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid'); // Génération de user_id
-const jwt = require('jsonwebtoken'); // ✅ Ajout pour JWT
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -41,11 +40,6 @@ const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
-
-/**
- * Clé secrète pour JWT premium
- */
-const JWT_SECRET = process.env.JWT_SECRET || 'ton_secret_key_ultra_securisee';
 
 /**
  * Route racine
@@ -148,34 +142,133 @@ app.post('/login', async (req, res) => {
 });
 
 /**
- * 🔹 Routes JWT Premium
+ * 🔹 Routes PayPal - Premium 30 jours
  */
 
-// Endpoint pour activer le pass premium (après paiement)
-app.post('/activate-premium', (req, res) => {
-  const { userId } = req.body;
-  if (!userId) return res.status(400).json({ error: 'userId requis.' });
+// Créer une commande PayPal
+app.post('/paypal/create-order', async (req, res) => {
+  const { user_id } = req.body;
 
-  // Créer un token JWT avec validité 30 jours
-  const token = jwt.sign(
-    { userId, premium: true },
-    JWT_SECRET,
-    { expiresIn: '30d' }
-  );
-
-  res.json({ token, message: 'Pass premium activé pour 30 jours' });
-});
-
-// Endpoint pour vérifier le pass premium
-app.get('/premium-content', (req, res) => {
-  const token = req.headers.authorization?.split(' ')[1];
-  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+  if (!user_id || !/^[0-9a-fA-F\-]{36}$/.test(user_id)) {
+    return res.status(400).json({ error: 'user_id invalide' });
+  }
 
   try {
-    const decoded = jwt.verify(token, JWT_SECRET);
-    res.json({ access: decoded.premium, message: 'Accès premium OK' });
+    const response = await axios.post(
+      'https://api-m.sandbox.paypal.com/v2/checkout/orders',
+      {
+        intent: 'CAPTURE',
+        purchase_units: [{
+          amount: { currency_code: 'USD', value: '7.99' },
+          custom_id: user_id
+        }]
+      },
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.PAYPAL_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const orderID = response.data.id;
+
+    await supabase.from('payments').insert([{
+      paypal_order_id: orderID,
+      user_id,
+      status: 'CREATED',
+      amount: 7.99,
+      created_at: new Date()
+    }]);
+
+    res.json({ orderID });
   } catch (err) {
-    res.status(401).json({ error: 'Token invalide ou expiré' });
+    console.error('[Create Order Error]', err.response?.data || err.message);
+    res.status(500).json({ error: 'Erreur lors de la création de la commande PayPal' });
+  }
+});
+
+// Capturer la commande PayPal et activer premium
+app.post('/paypal/capture-order', async (req, res) => {
+  const { orderID } = req.body;
+
+  if (!orderID) return res.status(400).json({ error: 'orderID requis' });
+
+  try {
+    const captureResponse = await axios.post(
+      `https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}/capture`,
+      {},
+      {
+        headers: {
+          'Authorization': `Bearer ${process.env.PAYPAL_ACCESS_TOKEN}`,
+          'Content-Type': 'application/json'
+        }
+      }
+    );
+
+    const captureData = captureResponse.data;
+
+    if (captureData.status !== 'COMPLETED') {
+      return res.status(400).json({ error: 'Paiement non complété' });
+    }
+
+    const user_id = captureData.purchase_units[0].custom_id;
+
+    await supabase.from('payments').insert([{
+      paypal_order_id: orderID,
+      user_id,
+      amount: 7.99,
+      paid_at: new Date()
+    }]);
+
+    const premium_expires_at = new Date();
+    premium_expires_at.setDate(premium_expires_at.getDate() + 30);
+
+    await supabase.from('DATA BASE PROFILES')
+      .update({
+        is_premium: true,
+        premium_expires_at
+      })
+      .eq('user_id', user_id);
+
+    res.json({ success: true, is_premium: true, premium_expires_at });
+  } catch (err) {
+    console.error('[Capture Order Error]', err.response?.data || err.message);
+    res.status(500).json({ error: 'Erreur lors de la capture PayPal' });
+  }
+});
+
+// Vérifier l’état premium réel
+app.get('/api/user/me', async (req, res) => {
+  const { user_id } = req.query;
+
+  if (!user_id || !/^[0-9a-fA-F\-]{36}$/.test(user_id)) {
+    return res.status(400).json({ error: 'user_id invalide' });
+  }
+
+  try {
+    const { data: users } = await supabase
+      .from('DATA BASE PROFILES')
+      .select('is_premium, premium_expires_at')
+      .eq('user_id', user_id)
+      .single();
+
+    if (!users) return res.status(404).json({ error: 'Utilisateur non trouvé' });
+
+    let { is_premium, premium_expires_at } = users;
+
+    if (is_premium && new Date(premium_expires_at) < new Date()) {
+      is_premium = false;
+      premium_expires_at = null;
+      await supabase.from('DATA BASE PROFILES')
+        .update({ is_premium: false, premium_expires_at: null })
+        .eq('user_id', user_id);
+    }
+
+    res.json({ is_premium, premium_expires_at });
+  } catch (err) {
+    console.error('[User Me Error]', err.message);
+    res.status(500).json({ error: 'Erreur lors de la récupération de l’état utilisateur' });
   }
 });
 
@@ -249,7 +342,7 @@ ${sourceCode}
 `;
 
     const response = await axios.post(
-      'https://api.groq.com/openai/v1/chat/completions',
+      'https://api/groq.com/openai/v1/chat/completions',
       { model: "llama-3.3-70b-versatile", messages: [{ role: "system", content: prompt }], temperature: 0.1 },
       { headers: { 'Authorization': `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' }, timeout: 30000 }
     );
