@@ -22,7 +22,7 @@ app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
-// Supabase
+// Supabase client
 const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
@@ -33,23 +33,20 @@ app.get("/", (req, res) => {
   res.send("Backend OK");
 });
 
-// Health check
+// Health
 app.get('/api/health', (req, res) => {
   res.json({
-    status: 'ok',
-    groq: !!process.env.GROQ_API_KEY,
-    refactoring: !!process.env.REFACTORING_API_KEY,
-    supabase: !!process.env.DATA_BASE_URL
+    status: 'ok'
   });
 });
 
 /* =========================
    SIGNUP
 ========================= */
-
 app.post('/signup', async (req, res) => {
   const { email, password, username } = req.body;
-  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
+  if (!email || !password)
+    return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
@@ -94,7 +91,6 @@ app.post('/signup', async (req, res) => {
 /* =========================
    LOGIN
 ========================= */
-
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
 
@@ -129,10 +125,8 @@ app.post('/login', async (req, res) => {
 /* =========================
    USER ME
 ========================= */
-
 app.get('/api/user/me', async (req, res) => {
   const { user_id } = req.query;
-
   if (!user_id) return res.status(400).json({ error: "user_id requis" });
 
   const { data, error } = await supabase
@@ -141,7 +135,8 @@ app.get('/api/user/me', async (req, res) => {
     .eq('user_id', user_id)
     .single();
 
-  if (error || !data) return res.status(404).json({ error: "Utilisateur non trouvé" });
+  if (error || !data)
+    return res.status(404).json({ error: "Utilisateur non trouvé" });
 
   res.json({ user: data });
 });
@@ -149,15 +144,15 @@ app.get('/api/user/me', async (req, res) => {
 /* =========================
    IA - AUDIT
 ========================= */
-
 app.post('/api/audit', async (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: "Code requis" });
 
   try {
     const prompt = `
-You are a code auditor AI. Analyze the following code.
-Return JSON array of findings.
+You are a security and code auditor AI.
+Analyze the following code for security vulnerabilities, bad practices, and code quality issues.
+Return a valid JSON array of findings.
 Code:
 ${code}
 `;
@@ -188,7 +183,6 @@ ${code}
 /* =========================
    IA - CONVERT
 ========================= */
-
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, fromLanguage, toLanguage } = req.body;
 
@@ -225,7 +219,6 @@ ${sourceCode}
 /* =========================
    IA - REFACTOR
 ========================= */
-
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
   if (!code) return res.status(400).json({ error: "Code requis" });
@@ -248,7 +241,9 @@ app.post('/api/refactor', async (req, res) => {
       }
     );
 
-    res.json({ refactoredCode: response.data.choices[0].message.content });
+    res.json({
+      refactoredCode: response.data.choices[0].message.content
+    });
 
   } catch (err) {
     console.error("[Refactor Error]", err.message);
@@ -259,14 +254,15 @@ app.post('/api/refactor', async (req, res) => {
 /* =========================
    PAYPAL WEBHOOK
 ========================= */
-
 app.post('/paypal/webhook', async (req, res) => {
   try {
     const { orderID } = req.body;
-    if (!orderID) return res.status(400).json({ error: "orderID requis" });
 
+    if (!orderID)
+      return res.status(400).json({ error: "orderID requis" });
+
+    // appel PayPal orders endpoint
     const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
-
     const orderResp = await axios.get(
       `https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`,
       {
@@ -282,6 +278,9 @@ app.post('/paypal/webhook', async (req, res) => {
 
     const user_id = orderResp.data.purchase_units?.[0]?.custom_id;
     const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
+
+    if (!user_id)
+      return res.status(400).json({ error: "custom_id manquant" });
 
     await supabase.from('DATA BASE PAYMENTS').insert([{
       user_id,
@@ -312,8 +311,8 @@ app.post('/paypal/webhook', async (req, res) => {
   }
 });
 
-/* ========================= */
-
+/* ========================= */  
 app.listen(PORT, () => {
   console.log(`Server démarré sur http://localhost:${PORT}`);
 });
+
