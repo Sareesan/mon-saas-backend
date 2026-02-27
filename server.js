@@ -1,7 +1,7 @@
 console.log("BACKEND VERSION SDK GROQ OK");
 
 /**
- * CodeVision AI - Backend complet avec Supabase Users + IA + PayPal Premium
+ * CodeVision AI - Backend complet avec Supabase Users + IA + PayPal
  */
 
 require('dotenv').config();
@@ -17,31 +17,23 @@ const { v4: uuidv4 } = require('uuid');
 const app = express();
 const PORT = process.env.PORT || 3000;
 
-/* =========================
-   MIDDLEWARE
-========================= */
-
+// Middleware
 app.use(cors());
 app.use(morgan('dev'));
 app.use(bodyParser.json({ limit: '10mb' }));
 
-/* =========================
-   SUPABASE
-========================= */
-
+// Supabase
 const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
-/* =========================
-   ROOT + HEALTH
-========================= */
-
+// Root
 app.get("/", (req, res) => {
   res.send("Backend OK");
 });
 
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'ok',
@@ -57,28 +49,26 @@ app.get('/api/health', (req, res) => {
 
 app.post('/signup', async (req, res) => {
   const { email, password, username } = req.body;
-
-  if (!email || !password)
-    return res.status(400).json({ error: 'Email et mot de passe requis.' });
+  if (!email || !password) return res.status(400).json({ error: 'Email et mot de passe requis.' });
 
   try {
     const normalizedEmail = email.trim().toLowerCase();
 
-    const { data: existing } = await supabase
+    const { data: existingUsers } = await supabase
       .from('DATA BASE PROFILES')
       .select('*')
       .eq('email', normalizedEmail);
 
-    if (existing && existing.length > 0)
+    if (existingUsers && existingUsers.length > 0)
       return res.status(400).json({ error: 'Compte déjà existant.' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const user_id = uuidv4();
+    const newUserId = uuidv4();
 
     const { data, error } = await supabase
       .from('DATA BASE PROFILES')
       .insert([{
-        user_id,
+        user_id: newUserId,
         email: normalizedEmail,
         password: hashedPassword,
         username: username || null,
@@ -143,8 +133,7 @@ app.post('/login', async (req, res) => {
 app.get('/api/user/me', async (req, res) => {
   const { user_id } = req.query;
 
-  if (!user_id)
-    return res.status(400).json({ error: "user_id requis" });
+  if (!user_id) return res.status(400).json({ error: "user_id requis" });
 
   const { data, error } = await supabase
     .from('DATA BASE PROFILES')
@@ -152,14 +141,13 @@ app.get('/api/user/me', async (req, res) => {
     .eq('user_id', user_id)
     .single();
 
-  if (error || !data)
-    return res.status(404).json({ error: "Utilisateur non trouvé" });
+  if (error || !data) return res.status(404).json({ error: "Utilisateur non trouvé" });
 
   res.json({ user: data });
 });
 
 /* =========================
-   IA - AUDIT (GROQ LLAMA)
+   IA - AUDIT
 ========================= */
 
 app.post('/api/audit', async (req, res) => {
@@ -167,14 +155,18 @@ app.post('/api/audit', async (req, res) => {
   if (!code) return res.status(400).json({ error: "Code requis" });
 
   try {
+    const prompt = `
+You are a code auditor AI. Analyze the following code.
+Return JSON array of findings.
+Code:
+${code}
+`;
+
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: "Analyse le code et retourne un JSON." },
-          { role: "user", content: code }
-        ],
+        messages: [{ role: "system", content: prompt }],
         temperature: 0.1
       },
       {
@@ -185,9 +177,7 @@ app.post('/api/audit', async (req, res) => {
       }
     );
 
-    res.json({
-      findings: response.data.choices[0].message.content
-    });
+    res.json({ findings: response.data.choices[0].message.content });
 
   } catch (err) {
     console.error("[Audit Error]", err.message);
@@ -196,21 +186,25 @@ app.post('/api/audit', async (req, res) => {
 });
 
 /* =========================
-   IA - CONVERT (GROQ LLAMA)
+   IA - CONVERT
 ========================= */
 
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, fromLanguage, toLanguage } = req.body;
 
   try {
+    const prompt = `
+Convert the following code from ${fromLanguage} to ${toLanguage}.
+Return code only.
+Code:
+${sourceCode}
+`;
+
     const response = await axios.post(
       "https://api.groq.com/openai/v1/chat/completions",
       {
         model: "llama-3.3-70b-versatile",
-        messages: [
-          { role: "system", content: `Convertis de ${fromLanguage} vers ${toLanguage}` },
-          { role: "user", content: sourceCode }
-        ]
+        messages: [{ role: "system", content: prompt }]
       },
       {
         headers: {
@@ -220,9 +214,7 @@ app.post('/api/convert', async (req, res) => {
       }
     );
 
-    res.json({
-      convertedCode: response.data.choices[0].message.content
-    });
+    res.json({ convertedCode: response.data.choices[0].message.content });
 
   } catch (err) {
     console.error("[Convert Error]", err.message);
@@ -231,7 +223,7 @@ app.post('/api/convert', async (req, res) => {
 });
 
 /* =========================
-   IA - REFACTOR (HUGGING FACE)
+   IA - REFACTOR
 ========================= */
 
 app.post('/api/refactor', async (req, res) => {
@@ -244,7 +236,7 @@ app.post('/api/refactor', async (req, res) => {
       {
         model: "Qwen/Qwen3-Coder-Next:fastest",
         messages: [
-          { role: "system", content: "Refactor le code proprement." },
+          { role: "system", content: "Refactor code only." },
           { role: "user", content: code }
         ]
       },
@@ -256,9 +248,7 @@ app.post('/api/refactor', async (req, res) => {
       }
     );
 
-    res.json({
-      refactoredCode: response.data.choices[0].message.content
-    });
+    res.json({ refactoredCode: response.data.choices[0].message.content });
 
   } catch (err) {
     console.error("[Refactor Error]", err.message);
@@ -273,12 +263,9 @@ app.post('/api/refactor', async (req, res) => {
 app.post('/paypal/webhook', async (req, res) => {
   try {
     const { orderID } = req.body;
-    if (!orderID)
-      return res.status(400).json({ error: "orderID requis" });
+    if (!orderID) return res.status(400).json({ error: "orderID requis" });
 
-    const auth = Buffer.from(
-      `${process.env.Client_ID}:${process.env.Secret}`
-    ).toString('base64');
+    const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
 
     const orderResp = await axios.get(
       `https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`,
@@ -293,14 +280,8 @@ app.post('/paypal/webhook', async (req, res) => {
     if (orderResp.data.status !== "COMPLETED")
       return res.status(400).json({ error: "Paiement non confirmé" });
 
-    const user_id =
-      orderResp.data.purchase_units?.[0]?.custom_id;
-
-    const amount =
-      orderResp.data.purchase_units?.[0]?.amount?.value;
-
-    if (!user_id)
-      return res.status(400).json({ error: "custom_id manquant" });
+    const user_id = orderResp.data.purchase_units?.[0]?.custom_id;
+    const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
 
     await supabase.from('DATA BASE PAYMENTS').insert([{
       user_id,
@@ -326,7 +307,7 @@ app.post('/paypal/webhook', async (req, res) => {
     res.json({ message: "Premium activé", expiresAt });
 
   } catch (err) {
-    console.error("[PAYPAL ERROR]", err.message);
+    console.error("[PAYPAL ERROR]", err.response?.data || err.message);
     res.status(500).json({ error: "Erreur PayPal." });
   }
 });
