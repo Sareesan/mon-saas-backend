@@ -13,6 +13,7 @@ const bodyParser = require('body-parser');
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcrypt');
 const { v4: uuidv4 } = require('uuid'); // Génération de user_id
+const jwt = require('jsonwebtoken'); // ✅ Ajout pour JWT
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -40,6 +41,11 @@ const supabase = createClient(
   process.env.DATA_BASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
+
+/**
+ * Clé secrète pour JWT premium
+ */
+const JWT_SECRET = process.env.JWT_SECRET || 'ton_secret_key_ultra_securisee';
 
 /**
  * Route racine
@@ -138,6 +144,38 @@ app.post('/login', async (req, res) => {
   } catch (err) {
     console.error('[Login Error]', err.message);
     res.status(500).json({ error: 'Erreur lors de la connexion.' });
+  }
+});
+
+/**
+ * 🔹 Routes JWT Premium
+ */
+
+// Endpoint pour activer le pass premium (après paiement)
+app.post('/activate-premium', (req, res) => {
+  const { userId } = req.body;
+  if (!userId) return res.status(400).json({ error: 'userId requis.' });
+
+  // Créer un token JWT avec validité 30 jours
+  const token = jwt.sign(
+    { userId, premium: true },
+    JWT_SECRET,
+    { expiresIn: '30d' }
+  );
+
+  res.json({ token, message: 'Pass premium activé pour 30 jours' });
+});
+
+// Endpoint pour vérifier le pass premium
+app.get('/premium-content', (req, res) => {
+  const token = req.headers.authorization?.split(' ')[1];
+  if (!token) return res.status(401).json({ error: 'Non autorisé' });
+
+  try {
+    const decoded = jwt.verify(token, JWT_SECRET);
+    res.json({ access: decoded.premium, message: 'Accès premium OK' });
+  } catch (err) {
+    res.status(401).json({ error: 'Token invalide ou expiré' });
   }
 });
 
