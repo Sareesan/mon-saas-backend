@@ -116,6 +116,7 @@ app.post('/login', async (req, res) => {
     const match = await bcrypt.compare(password, user.password);
     if (!match) return res.status(401).json({ error: 'Mot de passe incorrect.' });
 
+    // Vérifier expiration premium
     let premiumActive = false;
     if (user.premium_active && user.premium_expires_at) {
       const now = new Date();
@@ -154,7 +155,7 @@ app.post('/login', async (req, res) => {
 });
 
 /**
- * 🔹 Routes IA (GROQ / Hugging Face)
+ * 🔹 Routes IA (GROQ / Hugging Face / Llama)
  */
 
 // Audit
@@ -282,10 +283,8 @@ app.post('/paypal/webhook', async (req, res) => {
   if (!user_id || !orderID) return res.status(400).json({ error: 'Données manquantes' });
 
   try {
-    // Auth PayPal
+    // Vérifier l’ordre PayPal sandbox/live
     const auth = Buffer.from(`${process.env.Client_ID}:${process.env.Secret}`).toString('base64');
-
-    // Récupérer l’ordre
     const orderResp = await axios.get(`https://api-m.sandbox.paypal.com/v2/checkout/orders/${orderID}`, {
       headers: {
         'Authorization': `Basic ${auth}`,
@@ -297,7 +296,6 @@ app.post('/paypal/webhook', async (req, res) => {
       return res.status(400).json({ error: 'Paiement non confirmé par PayPal' });
     }
 
-    const payerEmail = orderResp.data.payer?.email_address;
     const amount = orderResp.data.purchase_units?.[0]?.amount?.value;
 
     // Ajouter paiement
@@ -310,18 +308,18 @@ app.post('/paypal/webhook', async (req, res) => {
     }]);
 
     // Activer pass premium 30 jours
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    const expires = new Date();
+    expires.setDate(expires.getDate() + 30);
 
     await supabase.from('DATA BASE PROFILES').update({
       premium_active: true,
-      premium_expires_at: expiresAt,
+      premium_expires_at: expires,
       free_trial_conversion: false,
       free_trial_audit: false,
       free_trial_refactor: false
     }).eq('user_id', user_id);
 
-    res.status(200).json({ message: 'Pass premium activé', premium_expires_at: expiresAt });
+    res.status(200).json({ message: 'Pass premium activé', premium_expires_at: expires });
   } catch (err) {
     console.error('[PAYPAL ERROR]', err.response?.data || err.message);
     res.status(500).json({ error: 'Impossible d’activer le pass premium' });
