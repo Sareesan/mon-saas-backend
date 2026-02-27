@@ -8,7 +8,7 @@ const morgan = require('morgan');
 const bodyParser = require('body-parser');
 const { createClient } = require('@supabase/supabase-js');
 const bcrypt = require('bcrypt');
-const { v4: uuidv4 } = require('uuid');
+const { v4: uuidv4, validate: uuidValidate } = require('uuid');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -32,6 +32,7 @@ app.get("/", (req, res) => {
 // ================= SIGNUP =================
 app.post('/signup', async (req, res) => {
   const { email, password, username } = req.body;
+
   if (!email || !password)
     return res.status(400).json({ error: 'Email et mot de passe requis' });
 
@@ -47,19 +48,18 @@ app.post('/signup', async (req, res) => {
       return res.status(400).json({ error: 'Compte déjà existant' });
 
     const hashedPassword = await bcrypt.hash(password, 10);
-    const newUserId = uuidv4();
 
     const newUser = {
-      user_id: newUserId,
+      user_id: uuidv4(),
       email: normalizedEmail,
       password: hashedPassword,
       username: username || null,
       created_at: new Date(),
       premium_active: false,
       premium_expires_at: null,
-      free_trial_conversion: true,
-      free_trial_audit: true,
-      free_trial_refactor: true
+      free_conversion_used: true,
+      free_audit_used: true,
+      free_refactor_used: true
     };
 
     const { data, error } = await supabase
@@ -83,6 +83,7 @@ app.post('/signup', async (req, res) => {
 // ================= LOGIN =================
 app.post('/login', async (req, res) => {
   const { email, password } = req.body;
+
   try {
     const { data: users } = await supabase
       .from('DATA BASE PROFILES')
@@ -94,22 +95,27 @@ app.post('/login', async (req, res) => {
 
     const user = users[0];
     const match = await bcrypt.compare(password, user.password);
-    if (!match) return res.status(401).json({ error: 'Mot de passe incorrect' });
+
+    if (!match)
+      return res.status(401).json({ error: 'Mot de passe incorrect' });
 
     let premiumActive = false;
+
     if (user.premium_active && user.premium_expires_at) {
       const now = new Date();
       const expires = new Date(user.premium_expires_at);
-      if (expires > now) premiumActive = true;
-      else {
+
+      if (expires > now) {
+        premiumActive = true;
+      } else {
         await supabase
           .from('DATA BASE PROFILES')
           .update({
             premium_active: false,
             premium_expires_at: null,
-            free_trial_conversion: true,
-            free_trial_audit: true,
-            free_trial_refactor: true
+            free_conversion_used: true,
+            free_audit_used: true,
+            free_refactor_used: true
           })
           .eq('user_id', user.user_id);
       }
@@ -122,9 +128,9 @@ app.post('/login', async (req, res) => {
         email: user.email,
         username: user.username,
         premium_active: premiumActive,
-        free_trial_conversion: user.free_trial_conversion,
-        free_trial_audit: user.free_trial_audit,
-        free_trial_refactor: user.free_trial_refactor
+        free_conversion_used: user.free_conversion_used,
+        free_audit_used: user.free_audit_used,
+        free_refactor_used: user.free_refactor_used
       }
     });
 
@@ -137,17 +143,28 @@ app.post('/login', async (req, res) => {
 // ================= CONVERT (GROQ) =================
 app.post('/api/convert', async (req, res) => {
   const { sourceCode, toLanguage } = req.body;
+
   try {
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
         model: "llama-3.3-70b-versatile",
-        messages: [{ role: "user", content: `Convert this code to ${toLanguage}:\n${sourceCode}` }]
+        messages: [{
+          role: "user",
+          content: `Convert this code to ${toLanguage}:\n${sourceCode}`
+        }]
       },
-      { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
     );
 
-    res.json({ convertedCode: response.data.choices[0].message.content });
+    res.json({
+      convertedCode: response.data.choices[0].message.content
+    });
 
   } catch (err) {
     console.error('[GROQ ERROR]', err.response?.data || err.message);
@@ -158,17 +175,28 @@ app.post('/api/convert', async (req, res) => {
 // ================= AUDIT (GROQ) =================
 app.post('/api/audit', async (req, res) => {
   const { code } = req.body;
+
   try {
     const response = await axios.post(
       'https://api.groq.com/openai/v1/chat/completions',
       {
         model: "llama-3.3-70b-versatile",
-        messages: [{ role: "user", content: `Audit this code and return JSON findings only:\n${code}` }]
+        messages: [{
+          role: "user",
+          content: `Audit this code and return JSON findings only:\n${code}`
+        }]
       },
-      { headers: { Authorization: `Bearer ${process.env.GROQ_API_KEY}`, 'Content-Type': 'application/json' } }
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.GROQ_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
     );
 
-    res.json({ findings: response.data.choices[0].message.content });
+    res.json({
+      findings: response.data.choices[0].message.content
+    });
 
   } catch (err) {
     console.error('[AUDIT ERROR]', err.response?.data || err.message);
@@ -179,17 +207,27 @@ app.post('/api/audit', async (req, res) => {
 // ================= REFACTOR (HUGGING FACE) =================
 app.post('/api/refactor', async (req, res) => {
   const { code } = req.body;
+
   try {
     const response = await axios.post(
       'https://router.huggingface.co/v1/chat/completions',
       {
         model: "Qwen/Qwen3-Coder-Next:fastest",
-        messages: [{ role: "user", content: `Refactor this code:\n${code}` }]
+        messages: [
+          { role: "user", content: `Refactor this code:\n${code}` }
+        ]
       },
-      { headers: { Authorization: `Bearer ${process.env.REFACTORING_API_KEY}`, 'Content-Type': 'application/json' } }
+      {
+        headers: {
+          Authorization: `Bearer ${process.env.REFACTORING_API_KEY}`,
+          'Content-Type': 'application/json'
+        }
+      }
     );
 
-    res.json({ refactoredCode: response.data.choices[0].message.content });
+    res.json({
+      refactoredCode: response.data.choices[0].message.content
+    });
 
   } catch (err) {
     console.error('[REFACTOR ERROR]', err.response?.data || err.message);
@@ -200,27 +238,28 @@ app.post('/api/refactor', async (req, res) => {
 // ================= PAYPAL WEBHOOK =================
 app.post('/paypal/webhook', async (req, res) => {
   const { orderID, user_id, amount } = req.body;
+
   console.log("Webhook reçu:", req.body);
 
-  if (!orderID || !user_id || !amount)
+  if (!orderID || !user_id || !amount) {
     return res.status(400).json({ error: "Données manquantes" });
-
-  // Vérifier que user_id est bien un UUID
-  const uuidRegex = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
-  if (!uuidRegex.test(user_id)) {
-    console.log("UUID INVALID", user_id);
-    return res.status(400).json({ error: "Invalid user id" });
   }
-  console.log("UUID OK", user_id);
+
+  if (!uuidValidate(user_id)) {
+    console.log("UUID INVALID", user_id);
+    return res.status(400).json({ error: "user_id invalide" });
+  } else {
+    console.log("UUID OK", user_id);
+  }
 
   try {
     // Insert payment
     const { error: paymentError } = await supabase
       .from('DATA BASE PAYMENTS')
       .insert([{
-        user_id,
+        user_id: user_id,
         paypal_order_id: orderID,
-        amount,
+        amount: amount,
         status: "confirmed",
         created_at: new Date()
       }]);
@@ -230,18 +269,18 @@ app.post('/paypal/webhook', async (req, res) => {
       return res.status(500).json({ error: paymentError.message });
     }
 
-    // Activer premium
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    // Activate premium
+    const premiumExpiresAt = new Date();
+    premiumExpiresAt.setDate(premiumExpiresAt.getDate() + 30);
 
     const { error: profileError } = await supabase
       .from('DATA BASE PROFILES')
       .update({
         premium_active: true,
-        premium_expires_at: expiresAt,
-        free_trial_conversion: false,
-        free_trial_audit: false,
-        free_trial_refactor: false
+        premium_expires_at: premiumExpiresAt,
+        free_audit_used: false,
+        free_conversion_used: false,
+        free_refactor_used: false
       })
       .eq('user_id', user_id);
 
@@ -252,7 +291,10 @@ app.post('/paypal/webhook', async (req, res) => {
 
     console.log("Premium activé pour:", user_id);
 
-    res.status(200).json({ message: "Premium activé", expires_at: expiresAt });
+    res.status(200).json({
+      message: "Premium activé",
+      expires_at: premiumExpiresAt
+    });
 
   } catch (err) {
     console.error('[PAYPAL FATAL]', err);
